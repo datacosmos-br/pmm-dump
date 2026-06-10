@@ -59,7 +59,7 @@ func main() { //nolint:gocyclo,maintidx
 		victoriaMetricsURL = cli.Flag("victoria-metrics-url", "VictoriaMetrics connection string").Envar("PMM_VM_URL").String()
 		clickHouseURL      = cli.Flag("click-house-url", "ClickHouse connection string").Envar("PMM_CLICKHOUSE_URL").String()
 
-		postgresURL     = cli.Flag("postgres-url", "PostgreSQL connection string").Envar("PMM_POSTGRES_URL").String()
+		postgresURL = cli.Flag("postgres-url", "PostgreSQL connection string").Envar("PMM_POSTGRES_URL").String()
 
 		dumpCore     = cli.Flag("dump-core", "Specify to export/import core metrics").Default("true").Bool()
 		dumpQAN      = cli.Flag("dump-qan", "Specify to export/import QAN metrics").Bool()

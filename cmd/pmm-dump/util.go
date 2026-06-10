@@ -253,8 +253,8 @@ func composeMeta(pmmURL string, c *client.Client, exportServices bool, cli *king
 			value := model.Value.String()
 			switch model.Name {
 			case "pmm-user", "pmm-pass",
-					"pmm-url", "victoria-metrics-url", "click-house-url", "postgres-url":
-					value = redactURL(value)
+				"pmm-url", "victoria-metrics-url", "click-house-url", "postgres-url":
+				value = redactURL(value)
 			}
 			args = append(args, fmt.Sprintf("--%s=%s", model.Name, value))
 		}

@@ -21,6 +21,8 @@ import (
 	"strings"
 )
 
+const defaultPMMDB = "pmm"
+
 type PMMConfig struct {
 	PMMURL             string
 	ClickHouseURL      string
@@ -82,7 +84,7 @@ func GetClickHouseURLFromEnv() string {
 	}
 	db := os.Getenv("PMM_CLICKHOUSE_DATABASE")
 	if db == "" {
-		db = "pmm"
+		db = defaultPMMDB
 	}
 
 	u := url.URL{
@@ -119,11 +121,11 @@ func GetPostgresURLFromEnv() string {
 	}
 	user := os.Getenv("PMM_POSTGRES_USERNAME")
 	if user == "" {
-		user = "pmm"
+		user = defaultPMMDB
 	}
 	pass := os.Getenv("PMM_POSTGRES_PASSWORD")
 	if pass == "" {
-		pass = "pmm"
+		pass = defaultPMMDB
 	}
 	db := os.Getenv("PMM_POSTGRES_DBNAME")
 	if db == "" {
@@ -162,6 +164,6 @@ func composeClickHouseURL(u url.URL) string {
 	}
 	u.User = nil
 	u.Host += ":9000"
-	u.Path = "pmm"
+	u.Path = defaultPMMDB
 	return u.String()
 }

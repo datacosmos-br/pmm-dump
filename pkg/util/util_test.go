@@ -38,11 +38,11 @@ func TestGetClickHouseURLFromEnv(t *testing.T) {
 	})
 
 	t.Run("default", func(t *testing.T) {
-		os.Unsetenv("PMM_CLICKHOUSE_URL")
-		os.Unsetenv("PMM_CLICKHOUSE_ADDR")
-		os.Unsetenv("PMM_CLICKHOUSE_USER")
-		os.Unsetenv("PMM_CLICKHOUSE_PASSWORD")
-		os.Unsetenv("PMM_CLICKHOUSE_DATABASE")
+		_ = os.Unsetenv("PMM_CLICKHOUSE_URL")
+		_ = os.Unsetenv("PMM_CLICKHOUSE_ADDR")
+		_ = os.Unsetenv("PMM_CLICKHOUSE_USER")
+		_ = os.Unsetenv("PMM_CLICKHOUSE_PASSWORD")
+		_ = os.Unsetenv("PMM_CLICKHOUSE_DATABASE")
 		assert.Equal(t, "clickhouse://default:clickhouse@127.0.0.1:9000/pmm", GetClickHouseURLFromEnv())
 	})
 }
@@ -54,7 +54,7 @@ func TestGetVMURLFromEnv(t *testing.T) {
 	})
 
 	t.Run("default", func(t *testing.T) {
-		os.Unsetenv("PMM_VM_URL")
+		_ = os.Unsetenv("PMM_VM_URL")
 		assert.Equal(t, "http://127.0.0.1:9090/prometheus", GetVMURLFromEnv())
 	})
 }
@@ -76,12 +76,12 @@ func TestGetPostgresURLFromEnv(t *testing.T) {
 	})
 
 	t.Run("default", func(t *testing.T) {
-		os.Unsetenv("PMM_POSTGRES_URL")
-		os.Unsetenv("PMM_POSTGRES_ADDR")
-		os.Unsetenv("PMM_POSTGRES_USERNAME")
-		os.Unsetenv("PMM_POSTGRES_PASSWORD")
-		os.Unsetenv("PMM_POSTGRES_DBNAME")
-		os.Unsetenv("PMM_POSTGRES_SSLMODE")
+		_ = os.Unsetenv("PMM_POSTGRES_URL")
+		_ = os.Unsetenv("PMM_POSTGRES_ADDR")
+		_ = os.Unsetenv("PMM_POSTGRES_USERNAME")
+		_ = os.Unsetenv("PMM_POSTGRES_PASSWORD")
+		_ = os.Unsetenv("PMM_POSTGRES_DBNAME")
+		_ = os.Unsetenv("PMM_POSTGRES_SSLMODE")
 		assert.Equal(t, "postgres://pmm:pmm@127.0.0.1:5432/pmm-managed?sslmode=disable", GetPostgresURLFromEnv())
 	})
 }

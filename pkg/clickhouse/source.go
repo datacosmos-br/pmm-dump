@@ -32,13 +32,13 @@ import (
 )
 
 type Source struct {
-	db          *sql.DB
-	cfg         Config
-	tx          *sql.Tx
-	ct          []*sql.ColumnType
-	stmt        *sql.Stmt
-	engine      string
-	tableName   string
+	db        *sql.DB
+	cfg       Config
+	tx        *sql.Tx
+	ct        []*sql.ColumnType
+	stmt      *sql.Stmt
+	engine    string
+	tableName string
 }
 
 func NewSource(ctx context.Context, cfg Config) (*Source, error) {
@@ -127,7 +127,7 @@ func (s Source) Type() dump.SourceType {
 func (s Source) ReadChunk(m dump.ChunkMeta) (*dump.Chunk, error) {
 	offset := m.Index * m.RowsLen
 	limit := m.RowsLen
-	query := fmt.Sprintf("SELECT * FROM %s", s.tableName)
+	query := "SELECT * FROM " + s.tableName //nolint:gosec
 	query += " " + prepareWhereClause(s.cfg.Where, m.Start, m.End)
 	query += fmt.Sprintf(" ORDER BY period_start, queryid LIMIT %d OFFSET %d", limit, offset)
 	rows, err := s.db.Query(query)
@@ -251,7 +251,7 @@ func prepareWhereClause(whereCondition string, start, end *time.Time) string {
 
 func (s Source) Count(where string, startTime, endTime *time.Time) (int, error) {
 	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", s.tableName)
+	query := "SELECT COUNT(*) FROM " + s.tableName //nolint:gosec
 	if where != "" {
 		query += " " + prepareWhereClause(where, startTime, endTime)
 	}

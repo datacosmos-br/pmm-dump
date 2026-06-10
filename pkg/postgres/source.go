@@ -52,12 +52,11 @@ func (s Source) ReadChunk(meta dump.ChunkMeta) (*dump.Chunk, error) {
 		"--data-only",
 		"--format=custom",
 		"--dbname", s.config.ConnectionURL,
-		"--schema", dbName,
-	)
+		"--schema", dbName)
 
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	stderr := &bytes.Buffer{}
+	stderr := new(bytes.Buffer)
 	cmd.Stderr = stderr
 
 	if err := cmd.Run(); err != nil {
@@ -72,17 +71,18 @@ func (s Source) ReadChunk(meta dump.ChunkMeta) (*dump.Chunk, error) {
 }
 
 // WriteChunk restores the PostgreSQL dump using pg_restore.
+//
+//nolint:unparam
 func (s Source) WriteChunk(filename string, r io.Reader) error {
 	log.Debug().Str("filename", filename).Msg("Restoring PostgreSQL chunk")
 
 	cmd := exec.Command("pg_restore", //nolint:gosec
 		"--clean",
 		"--if-exists",
-		"--dbname", s.config.ConnectionURL,
-	)
+		"--dbname", s.config.ConnectionURL)
 
 	cmd.Stdin = r
-	stderr := &bytes.Buffer{}
+	stderr := new(bytes.Buffer)
 	cmd.Stderr = stderr
 
 	if err := cmd.Run(); err != nil {
