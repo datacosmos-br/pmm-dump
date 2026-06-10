@@ -1,0 +1,35 @@
+pkg/util/util.go
+  s_d8591572ad7768::t_d028bc73e62c22 50-51
+cmd/pmm-dump/security_test.go
+  s_d8591572ad7768::t_d028bc73e62c22 1-130,132-137
+cmd/pmm-dump/main.go
+  s_d8591572ad7768::t_55c3e1439437b0 60-61
+pkg/util/util_test.go
+  s_d8591572ad7768::t_d028bc73e62c22 42-58
+cmd/pmm-dump/util.go
+  s_4af56065d21da0::t_86655b0195f934 348-349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "1b18ff456585afdc85af885241de7394e23f4710",
+  "prompts": {},
+  "sessions": {
+    "s_4af56065d21da0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "192b384b-fc96-479d-aa4b-597651f69de5",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Marlon Costa <marlonsc@gmail.com>"
+    },
+    "s_d8591572ad7768": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0ab63d-3dbc-4167-9bdb-453ed05bdb52",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Marlon Costa <marlonsc@gmail.com>"
+    }
+  }
+}
