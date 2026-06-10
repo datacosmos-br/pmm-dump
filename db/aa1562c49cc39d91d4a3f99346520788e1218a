@@ -1,0 +1,20 @@
+cmd/pmm-dump/main.go
+  s_d8591572ad7768::t_a939565986568c 59-60,62-66
+  s_d8591572ad7768::t_fb6240b0d9d2e3 320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "dbaa1562c49cc39d91d4a3f99346520788e1218a",
+  "prompts": {},
+  "sessions": {
+    "s_d8591572ad7768": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0ab63d-3dbc-4167-9bdb-453ed05bdb52",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Marlon Costa <marlonsc@gmail.com>"
+    }
+  }
+}

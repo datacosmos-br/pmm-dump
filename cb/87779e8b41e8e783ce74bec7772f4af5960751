@@ -1,0 +1,23 @@
+setup/clickhouse/cluster-shard1.xml
+  s_68ab3b967b2582::t_ca5856f4a0139f 1-24
+docker-compose.test.yml
+  s_68ab3b967b2582::t_982b4feb3b4985 1-112
+setup/clickhouse/init.sql
+  s_68ab3b967b2582::t_982b4feb3b4985 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "cb87779e8b41e8e783ce74bec7772f4af5960751",
+  "prompts": {},
+  "sessions": {
+    "s_68ab3b967b2582": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7627480e-5c4e-4864-8518-e3cbf3982b1a",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Marlon Costa <marlonsc@gmail.com>"
+    }
+  }
+}
