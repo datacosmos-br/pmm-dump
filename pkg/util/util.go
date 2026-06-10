@@ -17,10 +17,13 @@ package util
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/hashicorp/go-version"
 )
+
+const defaultPMMDB = "pmm"
 
 type PMMConfig struct {
 	PMMURL             string
@@ -39,6 +42,14 @@ func GetPMMConfig(pmmLink, vmLink, chLink string, ver *version.Version) (PMMConf
 		VictoriaMetricsURL: vmLink,
 	}
 
+	if conf.ClickHouseURL == "" {
+		conf.ClickHouseURL = GetClickHouseURLFromEnv()
+	}
+	if conf.VictoriaMetricsURL == "" {
+		conf.VictoriaMetricsURL = GetVMURLFromEnv()
+	}
+
+	// Fallback to composing from pmm-url if still empty
 	if conf.ClickHouseURL == "" {
 		conf.ClickHouseURL = composeClickHouseURL(*pmmURL, ver)
 	}
@@ -81,4 +92,61 @@ func CheckVer(ver *version.Version, constrain string) bool {
 	}
 	resConst := ver
 	return constraints.Check(resConst)
+}
+
+// GetClickHouseURLFromEnv builds ClickHouse URL from PMM environment variables.
+// Priority: PMM_CLICKHOUSE_URL > PMM_CLICKHOUSE_* individual vars.
+func GetClickHouseURLFromEnv() string {
+	urlStr := os.Getenv("PMM_CLICKHOUSE_URL")
+	if urlStr != "" {
+		return urlStr
+	}
+
+	addr := os.Getenv("PMM_CLICKHOUSE_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:9000"
+	}
+	user := os.Getenv("PMM_CLICKHOUSE_USER")
+	if user == "" {
+		user = "default"
+	}
+	pass := os.Getenv("PMM_CLICKHOUSE_PASSWORD")
+	if pass == "" {
+		pass = "clickhouse"
+	}
+	db := os.Getenv("PMM_CLICKHOUSE_DATABASE")
+	if db == "" {
+		db = defaultPMMDB
+	}
+
+	u := url.URL{
+		Scheme: "clickhouse",
+		Host:   addr,
+		Path:   db,
+	}
+	if user != "" || pass != "" {
+		u.User = url.UserPassword(user, pass)
+	}
+	return u.String()
+}
+
+// GetVMURLFromEnv returns VictoriaMetrics URL from PMM_VM_URL env var.
+func GetVMURLFromEnv() string {
+	urlStr := os.Getenv("PMM_VM_URL")
+	if urlStr != "" {
+		return urlStr
+	}
+	return "http://127.0.0.1:9090/prometheus"
+}
+
+// RedactURL removes credentials from a URL for safe logging.
+func RedactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if u.User != nil {
+		u.User = url.UserPassword("REDACTED", "REDACTED")
+	}
+	return u.String()
 }

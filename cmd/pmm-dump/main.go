@@ -57,8 +57,8 @@ var (
 	pmmCookie   = cli.Flag("pmm-cookie", "PMM Auth cookie").Envar("PMM_COOKIE").String()
 	pmmPassword = cli.Flag("pmm-pass", "PMM credentials password").Envar("PMM_PASS").String()
 
-	victoriaMetricsURL = cli.Flag("victoria-metrics-url", "VictoriaMetrics connection string").String()
-	clickHouseURL      = cli.Flag("click-house-url", "ClickHouse connection string").String()
+	victoriaMetricsURL = cli.Flag("victoria-metrics-url", "VictoriaMetrics connection string").Envar("PMM_VM_URL").String()
+	clickHouseURL      = cli.Flag("click-house-url", "ClickHouse connection string").Envar("PMM_CLICKHOUSE_URL").String()
 
 	dumpCore = cli.Flag("dump-core", "Specify to export/import core metrics").Default("true").Bool()
 	dumpQAN  = cli.Flag("dump-qan", "Specify to export/import QAN metrics").Bool()
