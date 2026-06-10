@@ -12,6 +12,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.34.0
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/stretchr/testify v1.11.1
 	github.com/valyala/fasthttp v1.69.0
 	go.mongodb.org/mongo-driver v1.17.6
 	golang.org/x/sync v0.19.0
@@ -82,5 +83,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20251213004720-97cd9d5aeac2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251213004720-97cd9d5aeac2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 )

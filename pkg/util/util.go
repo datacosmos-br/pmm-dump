@@ -17,6 +17,7 @@ package util
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -24,9 +25,10 @@ type PMMConfig struct {
 	PMMURL             string
 	ClickHouseURL      string
 	VictoriaMetricsURL string
+	PostgresURL        string
 }
 
-func GetPMMConfig(pmmLink, vmLink, chLink string) (PMMConfig, error) {
+func GetPMMConfig(pmmLink, vmLink, chLink, pgLink string) (PMMConfig, error) {
 	pmmURL, err := url.Parse(pmmLink)
 	if err != nil {
 		return PMMConfig{}, fmt.Errorf("failed to parse pmm-url: %w", err)
@@ -35,8 +37,20 @@ func GetPMMConfig(pmmLink, vmLink, chLink string) (PMMConfig, error) {
 		PMMURL:             pmmLink,
 		ClickHouseURL:      chLink,
 		VictoriaMetricsURL: vmLink,
+		PostgresURL:        pgLink,
 	}
 
+	if conf.ClickHouseURL == "" {
+		conf.ClickHouseURL = GetClickHouseURLFromEnv()
+	}
+	if conf.VictoriaMetricsURL == "" {
+		conf.VictoriaMetricsURL = GetVMURLFromEnv()
+	}
+	if conf.PostgresURL == "" {
+		conf.PostgresURL = GetPostgresURLFromEnv()
+	}
+
+	// Fallback to composing from pmm-url if still empty
 	if conf.ClickHouseURL == "" {
 		conf.ClickHouseURL = composeClickHouseURL(*pmmURL)
 	}
@@ -44,6 +58,94 @@ func GetPMMConfig(pmmLink, vmLink, chLink string) (PMMConfig, error) {
 		conf.VictoriaMetricsURL = composeVictoriaMetricsURL(*pmmURL)
 	}
 	return conf, nil
+}
+
+// GetClickHouseURLFromEnv builds ClickHouse URL from PMM environment variables.
+// Priority: PMM_CLICKHOUSE_URL > PMM_CLICKHOUSE_* individual vars.
+func GetClickHouseURLFromEnv() string {
+	urlStr := os.Getenv("PMM_CLICKHOUSE_URL")
+	if urlStr != "" {
+		return urlStr
+	}
+
+	addr := os.Getenv("PMM_CLICKHOUSE_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:9000"
+	}
+	user := os.Getenv("PMM_CLICKHOUSE_USER")
+	if user == "" {
+		user = "default"
+	}
+	pass := os.Getenv("PMM_CLICKHOUSE_PASSWORD")
+	if pass == "" {
+		pass = "clickhouse"
+	}
+	db := os.Getenv("PMM_CLICKHOUSE_DATABASE")
+	if db == "" {
+		db = "pmm"
+	}
+
+	u := url.URL{
+		Scheme: "clickhouse",
+		Host:   addr,
+		Path:   db,
+	}
+	if user != "" || pass != "" {
+		u.User = url.UserPassword(user, pass)
+	}
+	return u.String()
+}
+
+// GetVMURLFromEnv returns VictoriaMetrics URL from PMM_VM_URL env var.
+func GetVMURLFromEnv() string {
+	urlStr := os.Getenv("PMM_VM_URL")
+	if urlStr != "" {
+		return urlStr
+	}
+	return "http://127.0.0.1:9090/prometheus"
+}
+
+// GetPostgresURLFromEnv builds PostgreSQL URL from PMM environment variables.
+// Priority: PMM_POSTGRES_URL > PMM_POSTGRES_* individual vars.
+func GetPostgresURLFromEnv() string {
+	urlStr := os.Getenv("PMM_POSTGRES_URL")
+	if urlStr != "" {
+		return urlStr
+	}
+
+	addr := os.Getenv("PMM_POSTGRES_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:5432"
+	}
+	user := os.Getenv("PMM_POSTGRES_USERNAME")
+	if user == "" {
+		user = "pmm"
+	}
+	pass := os.Getenv("PMM_POSTGRES_PASSWORD")
+	if pass == "" {
+		pass = "pmm"
+	}
+	db := os.Getenv("PMM_POSTGRES_DBNAME")
+	if db == "" {
+		db = "pmm-managed"
+	}
+	sslmode := os.Getenv("PMM_POSTGRES_SSLMODE")
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+
+	u := url.URL{
+		Scheme: "postgres",
+		Host:   addr,
+		Path:   db,
+	}
+	if user != "" || pass != "" {
+		u.User = url.UserPassword(user, pass)
+	}
+	q := u.Query()
+	q.Set("sslmode", sslmode)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func composeVictoriaMetricsURL(u url.URL) string {

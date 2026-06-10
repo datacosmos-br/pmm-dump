@@ -32,11 +32,13 @@ import (
 )
 
 type Source struct {
-	db   *sql.DB
-	cfg  Config
-	tx   *sql.Tx
-	ct   []*sql.ColumnType
-	stmt *sql.Stmt
+	db          *sql.DB
+	cfg         Config
+	tx          *sql.Tx
+	ct          []*sql.ColumnType
+	stmt        *sql.Stmt
+	engine      string
+	tableName   string
 }
 
 func NewSource(ctx context.Context, cfg Config) (*Source, error) {
@@ -55,31 +57,59 @@ func NewSource(ctx context.Context, cfg Config) (*Source, error) {
 		}
 		return nil, errors.Wrap(err, "ping")
 	}
+
+	engine, tableName, err := detectEngine(ctx, db)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to detect ClickHouse engine, using defaults")
+		engine = "MergeTree"
+		tableName = "metrics"
+	}
+
+	log.Debug().Str("engine", engine).Str("table", tableName).Msg("Detected ClickHouse table")
+
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, errors.Wrap(err, "begin")
 	}
 
-	ct, err := columnTypes(db)
+	ct, err := columnTypes(db, tableName)
 	if err != nil {
 		return nil, errors.Wrap(err, "column types")
 	}
 
-	stmt, err := prepareInsertStatement(tx, len(ct))
+	stmt, err := prepareInsertStatement(tx, tableName, len(ct))
 	if err != nil {
 		return nil, errors.Wrap(err, "prepare insert statement")
 	}
 	return &Source{
-		cfg:  cfg,
-		db:   db,
-		tx:   tx,
-		ct:   ct,
-		stmt: stmt,
+		cfg:       cfg,
+		db:        db,
+		tx:        tx,
+		ct:        ct,
+		stmt:      stmt,
+		engine:    engine,
+		tableName: tableName,
 	}, nil
 }
 
-func columnTypes(db *sql.DB) ([]*sql.ColumnType, error) {
-	rows, err := db.Query("SELECT * FROM metrics LIMIT 1")
+func detectEngine(ctx context.Context, db *sql.DB) (string, string, error) {
+	var engine, tableName string
+	row := db.QueryRowContext(ctx, `
+		SELECT engine, name
+		FROM system.tables
+		WHERE database = currentDatabase()
+		  AND name IN ('metrics', 'metrics_local')
+		ORDER BY if(name = 'metrics_local', 0, 1)
+		LIMIT 1
+	`)
+	if err := row.Scan(&engine, &tableName); err != nil {
+		return "", "", errors.Wrap(err, "scan engine")
+	}
+	return engine, tableName, nil
+}
+
+func columnTypes(db *sql.DB, tableName string) ([]*sql.ColumnType, error) {
+	rows, err := db.Query(fmt.Sprintf("SELECT * FROM %s LIMIT 1", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +127,7 @@ func (s Source) Type() dump.SourceType {
 func (s Source) ReadChunk(m dump.ChunkMeta) (*dump.Chunk, error) {
 	offset := m.Index * m.RowsLen
 	limit := m.RowsLen
-	query := "SELECT * FROM metrics"
+	query := fmt.Sprintf("SELECT * FROM %s", s.tableName)
 	query += " " + prepareWhereClause(s.cfg.Where, m.Start, m.End)
 	query += fmt.Sprintf(" ORDER BY period_start, queryid LIMIT %d OFFSET %d", limit, offset)
 	rows, err := s.db.Query(query)
@@ -174,13 +204,13 @@ func (s Source) WriteChunk(_ string, r io.Reader) error {
 	return nil
 }
 
-func prepareInsertStatement(tx *sql.Tx, columnsCount int) (*sql.Stmt, error) {
+func prepareInsertStatement(tx *sql.Tx, tableName string, columnsCount int) (*sql.Stmt, error) {
 	var query strings.Builder
 
-	queryStart := "INSERT INTO metrics VALUES ("
+	queryStart := fmt.Sprintf("INSERT INTO %s VALUES (", tableName)
 
 	query.Grow(len(queryStart) + columnsCount*2)
-	query.WriteString("INSERT INTO metrics VALUES (")
+	query.WriteString(queryStart)
 	for i := 0; i < columnsCount-1; i++ {
 		query.WriteString("?,")
 	}
@@ -221,7 +251,7 @@ func prepareWhereClause(whereCondition string, start, end *time.Time) string {
 
 func (s Source) Count(where string, startTime, endTime *time.Time) (int, error) {
 	var count int
-	query := "SELECT COUNT(*) FROM metrics"
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", s.tableName)
 	if where != "" {
 		query += " " + prepareWhereClause(where, startTime, endTime)
 	}

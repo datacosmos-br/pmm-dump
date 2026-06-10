@@ -112,7 +112,7 @@ func (pmm *PMM) CreatePMMServer(ctx context.Context, dockerCli *client.Client, n
 		return errors.Wrap(err, "new client")
 	}
 
-	pmmConfig, err := pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "")
+	pmmConfig, err := pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "", "")
 	if err != nil {
 		return errors.Wrap(err, "get pmm config")
 	}

@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ import (
 	"pmm-dump/pkg/clickhouse"
 	"pmm-dump/pkg/dump"
 	"pmm-dump/pkg/grafana/client"
+	"pmm-dump/pkg/postgres"
 	"pmm-dump/pkg/victoriametrics"
 )
 
@@ -250,8 +252,9 @@ func composeMeta(pmmURL string, c *client.Client, exportServices bool, cli *king
 			model := cl.Model()
 			value := model.Value.String()
 			switch model.Name {
-			case "pmm-user", "pmm-pass":
-				value = "***"
+			case "pmm-user", "pmm-pass",
+					"pmm-url", "victoria-metrics-url", "click-house-url", "postgres-url":
+					value = redactURL(value)
 			}
 			args = append(args, fmt.Sprintf("--%s=%s", model.Name, value))
 		}
@@ -488,6 +491,21 @@ func createFile(dumpPath string, piped bool) (io.ReadWriteCloser, error) {
 	return file, nil
 }
 
+func preparePostgresSource(dumpPostgres bool, url string) (*postgres.Source, bool) {
+	if !dumpPostgres || url == "" {
+		return nil, false
+	}
+
+	c := &postgres.Config{
+		ConnectionURL: url,
+		Databases:     []string{"grafana", "ssmDB", "percona"},
+	}
+
+	log.Debug().Msgf("Got PostgreSQL URL: %s", c.ConnectionURL)
+
+	return postgres.NewSource(*c), true
+}
+
 func getDumpFilepath(customPath string, ts time.Time) (string, error) {
 	autoFilename := fmt.Sprintf("pmm-dump-%v.tar.gz", ts.Unix())
 	if customPath == "" {
@@ -505,4 +523,16 @@ func getDumpFilepath(customPath string, ts time.Time) (string, error) {
 	}
 
 	return customPath, nil
+}
+
+var urlRedactRe = regexp.MustCompile(`^(\w+://)[^@]+@`)
+
+func redactURL(raw string) string {
+	if !strings.Contains(raw, "@") {
+		return raw
+	}
+	if !urlRedactRe.MatchString(raw) {
+		return "***"
+	}
+	return urlRedactRe.ReplaceAllString(raw, "${1}***:***@")
 }

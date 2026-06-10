@@ -30,6 +30,7 @@ const (
 	UndefinedSource
 	VictoriaMetrics
 	ClickHouse
+	Postgres
 )
 
 func (s SourceType) String() string {
@@ -38,6 +39,8 @@ func (s SourceType) String() string {
 		return "vm"
 	case ClickHouse:
 		return "ch"
+	case Postgres:
+		return "pg"
 	default:
 		return "undefined"
 	}
@@ -49,6 +52,8 @@ func ParseSourceType(v string) SourceType {
 		return VictoriaMetrics
 	case "ch":
 		return ClickHouse
+	case "pg":
+		return Postgres
 	default:
 		return UndefinedSource
 	}

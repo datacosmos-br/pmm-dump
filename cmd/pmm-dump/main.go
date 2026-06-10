@@ -56,11 +56,14 @@ func main() { //nolint:gocyclo,maintidx
 		pmmCookie   = cli.Flag("pmm-cookie", "PMM Auth cookie").Envar("PMM_COOKIE").String()
 		pmmPassword = cli.Flag("pmm-pass", "PMM credentials password").Envar("PMM_PASS").String()
 
-		victoriaMetricsURL = cli.Flag("victoria-metrics-url", "VictoriaMetrics connection string").String()
-		clickHouseURL      = cli.Flag("click-house-url", "ClickHouse connection string").String()
+		victoriaMetricsURL = cli.Flag("victoria-metrics-url", "VictoriaMetrics connection string").Envar("PMM_VM_URL").String()
+		clickHouseURL      = cli.Flag("click-house-url", "ClickHouse connection string").Envar("PMM_CLICKHOUSE_URL").String()
 
-		dumpCore = cli.Flag("dump-core", "Specify to export/import core metrics").Default("true").Bool()
-		dumpQAN  = cli.Flag("dump-qan", "Specify to export/import QAN metrics").Bool()
+		postgresURL     = cli.Flag("postgres-url", "PostgreSQL connection string").Envar("PMM_POSTGRES_URL").String()
+
+		dumpCore     = cli.Flag("dump-core", "Specify to export/import core metrics").Default("true").Bool()
+		dumpQAN      = cli.Flag("dump-qan", "Specify to export/import QAN metrics").Bool()
+		dumpPostgres = cli.Flag("dump-postgres", "Include PostgreSQL in dump").Envar("PMM_DUMP_POSTGRES").Default("true").Bool()
 
 		enableVerboseMode  = cli.Flag("verbose", "Enable verbose mode").Short('v').Bool()
 		allowInsecureCerts = cli.Flag("allow-insecure-certs",
@@ -201,7 +204,7 @@ func main() { //nolint:gocyclo,maintidx
 
 		var sources []dump.Source
 
-		pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL)
+		pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL, *postgresURL)
 		if err != nil {
 			log.Fatal().Err(err).Msg("Failed to get PMM config")
 		}
@@ -236,6 +239,11 @@ func main() { //nolint:gocyclo,maintidx
 		chSource, ok := prepareClickHouseSource(ctx, *dumpQAN, pmmConfig.ClickHouseURL, *where)
 		if ok {
 			sources = append(sources, chSource)
+		}
+
+		pgSource, ok := preparePostgresSource(*dumpPostgres, pmmConfig.PostgresURL)
+		if ok {
+			sources = append(sources, pgSource)
 		}
 
 		file, err := createFile(*dumpPath, *stdout)
@@ -309,7 +317,7 @@ func main() { //nolint:gocyclo,maintidx
 
 		var sources []dump.Source
 
-		pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL)
+		pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL, *postgresURL)
 		if err != nil {
 			log.Fatal().Err(err).Msg("Failed to get PMM config")
 		}
@@ -360,6 +368,11 @@ func main() { //nolint:gocyclo,maintidx
 		chSource, ok := prepareClickHouseSource(ctx, *dumpQAN, pmmConfig.ClickHouseURL, *where)
 		if ok {
 			sources = append(sources, chSource)
+		}
+
+		pgSource, ok := preparePostgresSource(*dumpPostgres, pmmConfig.PostgresURL)
+		if ok {
+			sources = append(sources, pgSource)
 		}
 
 		if *dumpPath == "" && !piped {
