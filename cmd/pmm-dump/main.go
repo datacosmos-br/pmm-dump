@@ -59,9 +59,11 @@ var (
 
 	victoriaMetricsURL = cli.Flag("victoria-metrics-url", "VictoriaMetrics connection string").Envar("PMM_VM_URL").String()
 	clickHouseURL      = cli.Flag("click-house-url", "ClickHouse connection string").Envar("PMM_CLICKHOUSE_URL").String()
+	postgresURL        = cli.Flag("postgres-url", "PostgreSQL connection string").Envar("PMM_POSTGRES_URL").String()
 
-	dumpCore = cli.Flag("dump-core", "Specify to export/import core metrics").Default("true").Bool()
-	dumpQAN  = cli.Flag("dump-qan", "Specify to export/import QAN metrics").Bool()
+	dumpCore     = cli.Flag("dump-core", "Specify to export/import core metrics").Default("true").Bool()
+	dumpQAN      = cli.Flag("dump-qan", "Specify to export/import QAN metrics").Bool()
+	dumpPostgres = cli.Flag("dump-postgres", "Include PostgreSQL data when a PostgreSQL URL is available").Envar("PMM_DUMP_POSTGRES").Default("true").Bool()
 
 	enableVerboseMode  = cli.Flag("verbose", "Enable verbose mode").Short('v').Bool()
 	allowInsecureCerts = cli.Flag("allow-insecure-certs",
@@ -263,13 +265,13 @@ func importData(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP client: %w", err)
 	}
-	if !(*dumpQAN || *dumpCore) {
+	if !(*dumpQAN || *dumpCore || *dumpPostgres) {
 		return errors.New("please, specify at least one data source")
 	}
 
 	var sources []dump.Source
 
-	pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL, getStructuredVersion(*pmmURL, grafanaC))
+	pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL, *postgresURL, getStructuredVersion(*pmmURL, grafanaC))
 	if err != nil {
 		return fmt.Errorf("failed to get PMM config: %w", err)
 	}
@@ -329,6 +331,13 @@ func importData(ctx context.Context) error {
 			return fmt.Errorf("failed to connect to ClickHouse: %w", err)
 		}
 		sources = append(sources, chSource)
+	}
+
+	if pgSource, ok := preparePostgresSource(*dumpPostgres, pmmConfig.PostgresURL); ok {
+		sources = append(sources, pgSource)
+	}
+	if len(sources) == 0 {
+		return errors.New("no data source configured")
 	}
 
 	if *dumpPath == "" && !piped {
@@ -428,7 +437,7 @@ func exportData(logConsoleWriter zerolog.ConsoleWriter, ctx context.Context) err
 
 	var sources []dump.Source
 
-	pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL, getStructuredVersion(*pmmURL, grafanaC))
+	pmmConfig, err := util.GetPMMConfig(*pmmURL, *victoriaMetricsURL, *clickHouseURL, *postgresURL, getStructuredVersion(*pmmURL, grafanaC))
 	if err != nil {
 		return fmt.Errorf("failed to get PMM config: %w", err)
 	}
@@ -483,6 +492,11 @@ func exportData(logConsoleWriter zerolog.ConsoleWriter, ctx context.Context) err
 		if len(chChunks) > 0 {
 			chunks = append(chunks, chChunks...)
 		}
+	}
+
+	if pgSource, ok := preparePostgresSource(*dumpPostgres, pmmConfig.PostgresURL); ok {
+		sources = append(sources, pgSource)
+		chunks = append(chunks, pgSource.Chunks()...)
 	}
 
 	if len(chunks) == 0 {

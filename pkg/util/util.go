@@ -24,14 +24,16 @@ import (
 )
 
 const defaultPMMDB = "pmm"
+const defaultPMMPostgresDB = "pmm-managed"
 
 type PMMConfig struct {
 	PMMURL             string
 	ClickHouseURL      string
 	VictoriaMetricsURL string
+	PostgresURL        string
 }
 
-func GetPMMConfig(pmmLink, vmLink, chLink string, ver *version.Version) (PMMConfig, error) {
+func GetPMMConfig(pmmLink, vmLink, chLink, pgLink string, ver *version.Version) (PMMConfig, error) {
 	pmmURL, err := url.Parse(pmmLink)
 	if err != nil {
 		return PMMConfig{}, fmt.Errorf("failed to parse pmm-url: %w", err)
@@ -40,6 +42,7 @@ func GetPMMConfig(pmmLink, vmLink, chLink string, ver *version.Version) (PMMConf
 		PMMURL:             pmmLink,
 		ClickHouseURL:      chLink,
 		VictoriaMetricsURL: vmLink,
+		PostgresURL:        pgLink,
 	}
 
 	if conf.ClickHouseURL == "" {
@@ -47,6 +50,9 @@ func GetPMMConfig(pmmLink, vmLink, chLink string, ver *version.Version) (PMMConf
 	}
 	if conf.VictoriaMetricsURL == "" {
 		conf.VictoriaMetricsURL = GetVMURLFromEnv()
+	}
+	if conf.PostgresURL == "" {
+		conf.PostgresURL = GetPostgresURLFromEnv()
 	}
 
 	// Fallback to composing from pmm-url if still empty
@@ -137,6 +143,50 @@ func GetVMURLFromEnv() string {
 		return urlStr
 	}
 	return "http://127.0.0.1:9090/prometheus"
+}
+
+// GetPostgresURLFromEnv builds PostgreSQL URL from PMM environment variables.
+func GetPostgresURLFromEnv() string {
+	urlStr := os.Getenv("PMM_POSTGRES_URL")
+	if urlStr != "" {
+		return urlStr
+	}
+
+	addr := os.Getenv("PMM_POSTGRES_ADDR")
+	user := os.Getenv("PMM_POSTGRES_USERNAME")
+	pass := os.Getenv("PMM_POSTGRES_PASSWORD")
+	db := os.Getenv("PMM_POSTGRES_DBNAME")
+	sslmode := os.Getenv("PMM_POSTGRES_SSLMODE")
+	if addr == "" && user == "" && pass == "" && db == "" && sslmode == "" {
+		return ""
+	}
+	if addr == "" {
+		addr = "127.0.0.1:5432"
+	}
+	if user == "" {
+		user = "pmm"
+	}
+	if db == "" {
+		db = defaultPMMPostgresDB
+	}
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+
+	u := url.URL{
+		Scheme: "postgres",
+		Host:   addr,
+		Path:   db,
+	}
+	if pass != "" {
+		u.User = url.UserPassword(user, pass)
+	} else if user != "" {
+		u.User = url.User(user)
+	}
+	q := u.Query()
+	q.Set("sslmode", sslmode)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // RedactURL removes credentials from a URL for safe logging.

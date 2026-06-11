@@ -63,21 +63,45 @@ func TestGetVMURLFromEnv(t *testing.T) {
 func TestGetPMMConfig(t *testing.T) {
 	t.Run("all explicit", func(t *testing.T) {
 		ver, _ := version.NewVersion("3.8.1")
-		conf, err := GetPMMConfig("http://pmm:8080", "http://vm:8428", "clickhouse://ch:9000", ver)
+		conf, err := GetPMMConfig("http://pmm:8080", "http://vm:8428", "clickhouse://ch:9000", "postgres://pg:5432/pmm", ver)
 		require.NoError(t, err)
 		assert.Equal(t, "http://pmm:8080", conf.PMMURL)
 		assert.Equal(t, "http://vm:8428", conf.VictoriaMetricsURL)
 		assert.Equal(t, "clickhouse://ch:9000", conf.ClickHouseURL)
+		assert.Equal(t, "postgres://pg:5432/pmm", conf.PostgresURL)
 	})
 
 	t.Run("fallback to env", func(t *testing.T) {
 		t.Setenv("PMM_VM_URL", "http://vm-env:8428")
 		t.Setenv("PMM_CLICKHOUSE_URL", "clickhouse://ch-env:9000")
+		t.Setenv("PMM_POSTGRES_URL", "postgres://pg-env:5432/pmm")
 		ver, _ := version.NewVersion("3.8.1")
-		conf, err := GetPMMConfig("http://pmm:8080", "", "", ver)
+		conf, err := GetPMMConfig("http://pmm:8080", "", "", "", ver)
 		require.NoError(t, err)
 		assert.Equal(t, "http://vm-env:8428", conf.VictoriaMetricsURL)
 		assert.Equal(t, "clickhouse://ch-env:9000", conf.ClickHouseURL)
+		assert.Equal(t, "postgres://pg-env:5432/pmm", conf.PostgresURL)
+	})
+}
+
+func TestGetPostgresURLFromEnv(t *testing.T) {
+	t.Run("empty without env", func(t *testing.T) {
+		assert.Empty(t, GetPostgresURLFromEnv())
+	})
+
+	t.Run("explicit url", func(t *testing.T) {
+		t.Setenv("PMM_POSTGRES_URL", "postgres://pg.example.com:5432/pmm-managed")
+		assert.Equal(t, "postgres://pg.example.com:5432/pmm-managed", GetPostgresURLFromEnv())
+	})
+
+	t.Run("component env", func(t *testing.T) {
+		t.Setenv("PMM_POSTGRES_ADDR", "pg.example.com:5432")
+		t.Setenv("PMM_POSTGRES_USERNAME", "pmm")
+		t.Setenv("PMM_POSTGRES_PASSWORD", "x")
+		t.Setenv("PMM_POSTGRES_DBNAME", "pmm-managed")
+		t.Setenv("PMM_POSTGRES_SSLMODE", "require")
+
+		assert.Equal(t, "postgres://pmm:x@pg.example.com:5432/pmm-managed?sslmode=require", GetPostgresURLFromEnv())
 	})
 }
 

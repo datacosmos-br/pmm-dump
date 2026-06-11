@@ -107,7 +107,7 @@ func (pmm *PMM) CreatePMMServer(ctx context.Context, dockerCli *client.Client, n
 	}
 
 	pmm.Log("Ping VictoriaMetrics")
-	pmmConfig, err := pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "", nil)
+	pmmConfig, err := pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "", "", nil)
 	if err != nil {
 		return fmt.Errorf("failed to get PMM config: %w", err)
 	}
@@ -155,7 +155,7 @@ func (pmm *PMM) CreatePMMServer(ctx context.Context, dockerCli *client.Client, n
 		return fmt.Errorf("new client: %w", err)
 	}
 
-	pmmConfig, err = pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "", nil)
+	pmmConfig, err = pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "", "", nil)
 	if err != nil {
 		return fmt.Errorf("get pmm config: %w", err)
 	}

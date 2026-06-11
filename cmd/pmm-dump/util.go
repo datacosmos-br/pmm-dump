@@ -39,6 +39,7 @@ import (
 	"pmm-dump/pkg/clickhouse"
 	"pmm-dump/pkg/dump"
 	"pmm-dump/pkg/grafana/client"
+	"pmm-dump/pkg/postgres"
 	"pmm-dump/pkg/util"
 	"pmm-dump/pkg/victoriametrics"
 )
@@ -345,7 +346,7 @@ func composeMeta(pmmURL string, c *client.Client, exportServices bool, cli *king
 			switch model.Name {
 			case "pmm-user", "pmm-pass":
 				value = "***"
-			case "pmm-url", "victoria-metrics-url", "click-house-url":
+			case "pmm-url", "victoria-metrics-url", "click-house-url", "postgres-url":
 				value = util.RedactURL(value)
 			}
 			args = append(args, fmt.Sprintf("--%s=%s", model.Name, value))
@@ -454,7 +455,7 @@ func prepareVictoriaMetricsSource(grafanaC *client.Client, url string, selectors
 		ContentLimit:        int(contentLimit),
 	}
 
-	log.Debug().Msgf("Got Victoria Metrics URL: %s", c.ConnectionURL)
+	log.Debug().Msgf("Got Victoria Metrics URL: %s", util.RedactURL(c.ConnectionURL))
 
 	return victoriametrics.NewSource(grafanaC, c)
 }
@@ -470,9 +471,24 @@ func prepareClickHouseSource(ctx context.Context, url, where string) (*clickhous
 		return nil, fmt.Errorf("failed to create ClickHouse source: %w", err)
 	}
 
-	log.Debug().Msgf("Got ClickHouse URL: %s", c.ConnectionURL)
+	log.Debug().Msgf("Got ClickHouse URL: %s", util.RedactURL(c.ConnectionURL))
 
 	return clickhouseSource, nil
+}
+
+func preparePostgresSource(dumpPostgres bool, url string) (*postgres.Source, bool) {
+	if !dumpPostgres || url == "" {
+		return nil, false
+	}
+
+	c := postgres.Config{
+		ConnectionURL: url,
+		Databases:     []string{"grafana", "ssmDB", "percona"},
+	}
+
+	log.Debug().Msgf("Got PostgreSQL URL: %s", util.RedactURL(c.ConnectionURL))
+
+	return postgres.NewSource(c), true
 }
 
 func parseURL(pmmURL, pmmHost, pmmPort, pmmUser, pmmPassword *string) {

@@ -31,12 +31,18 @@ import (
 	"pmm-dump/pkg/dump"
 )
 
+const (
+	metricsTableName      = "metrics"
+	metricsLocalTableName = "metrics_local"
+)
+
 type Source struct {
-	db   *sql.DB
-	cfg  Config
-	tx   *sql.Tx
-	ct   []*sql.ColumnType
-	stmt *sql.Stmt
+	db        *sql.DB
+	cfg       Config
+	tx        *sql.Tx
+	ct        []*sql.ColumnType
+	stmt      *sql.Stmt
+	tableName string
 }
 
 func NewSource(ctx context.Context, cfg Config) (*Source, error) {
@@ -60,26 +66,77 @@ func NewSource(ctx context.Context, cfg Config) (*Source, error) {
 		return nil, fmt.Errorf("begin: %w", err)
 	}
 
-	ct, err := columnTypes(db)
+	tableName, err := detectMetricsTable(ctx, db)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to detect ClickHouse metrics table, using metrics")
+		tableName = metricsTableName
+	}
+
+	ct, err := columnTypes(db, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("column types: %w", err)
 	}
 
-	stmt, err := prepareInsertStatement(tx, len(ct))
+	stmt, err := prepareInsertStatement(tx, tableName, len(ct))
 	if err != nil {
 		return nil, fmt.Errorf("prepare insert statement: %w", err)
 	}
 	return &Source{
-		cfg:  cfg,
-		db:   db,
-		tx:   tx,
-		ct:   ct,
-		stmt: stmt,
+		cfg:       cfg,
+		db:        db,
+		tx:        tx,
+		ct:        ct,
+		stmt:      stmt,
+		tableName: tableName,
 	}, nil
 }
 
-func columnTypes(db *sql.DB) ([]*sql.ColumnType, error) {
-	rows, err := db.Query("SELECT * FROM metrics LIMIT 1")
+func detectMetricsTable(ctx context.Context, db *sql.DB) (string, error) {
+	var tableName string
+	row := db.QueryRowContext(ctx, `
+		SELECT name
+		FROM system.tables
+		WHERE database = currentDatabase()
+		  AND name IN ('metrics_local', 'metrics')
+		ORDER BY if(name = 'metrics_local', 0, 1)
+		LIMIT 1
+	`)
+	if err := row.Scan(&tableName); err != nil {
+		return "", err
+	}
+	return tableName, nil
+}
+
+func selectLimitOneQuery(tableName string) string {
+	if tableName == metricsLocalTableName {
+		return "SELECT * FROM metrics_local LIMIT 1"
+	}
+	return "SELECT * FROM metrics LIMIT 1"
+}
+
+func selectAllQuery(tableName string) string {
+	if tableName == metricsLocalTableName {
+		return "SELECT * FROM metrics_local"
+	}
+	return "SELECT * FROM metrics"
+}
+
+func insertPrefix(tableName string) string {
+	if tableName == metricsLocalTableName {
+		return "INSERT INTO metrics_local VALUES ("
+	}
+	return "INSERT INTO metrics VALUES ("
+}
+
+func countQuery(tableName string) string {
+	if tableName == metricsLocalTableName {
+		return "SELECT COUNT(*) FROM metrics_local"
+	}
+	return "SELECT COUNT(*) FROM metrics"
+}
+
+func columnTypes(db *sql.DB, tableName string) ([]*sql.ColumnType, error) {
+	rows, err := db.Query(selectLimitOneQuery(tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +154,7 @@ func (s Source) Type() dump.SourceType {
 func (s Source) ReadChunks(m dump.ChunkMeta) ([]*dump.Chunk, error) {
 	offset := m.Index * m.RowsLen
 	limit := m.RowsLen
-	query := "SELECT * FROM metrics"
+	query := selectAllQuery(s.tableName)
 	query += " " + prepareWhereClause(s.cfg.Where, m.Start, m.End)
 	query += fmt.Sprintf(" ORDER BY period_start, queryid LIMIT %d OFFSET %d", limit, offset)
 	rows, err := s.db.Query(query)
@@ -174,14 +231,18 @@ func (s Source) WriteChunk(_ string, r io.Reader) error {
 	return nil
 }
 
-func prepareInsertStatement(tx *sql.Tx, columnsCount int) (*sql.Stmt, error) {
+func prepareInsertStatement(tx *sql.Tx, tableName string, columnsCount int) (*sql.Stmt, error) {
+	if columnsCount <= 0 {
+		return nil, errors.New("columns count must be positive")
+	}
+
 	var query strings.Builder
 
-	queryStart := "INSERT INTO metrics VALUES ("
+	queryStart := insertPrefix(tableName)
 
 	query.Grow(len(queryStart) + columnsCount*2)
-	query.WriteString("INSERT INTO metrics VALUES (")
-	for range columnsCount {
+	query.WriteString(queryStart)
+	for range columnsCount - 1 {
 		query.WriteString("?,")
 	}
 	query.WriteString("?)")
@@ -221,9 +282,9 @@ func prepareWhereClause(whereCondition string, start, end *time.Time) string {
 
 func (s Source) Count(where string, startTime, endTime *time.Time) (int, error) {
 	var count int
-	query := "SELECT COUNT(*) FROM metrics"
-	if where != "" {
-		query += " " + prepareWhereClause(where, startTime, endTime)
+	query := countQuery(s.tableName)
+	if whereClause := prepareWhereClause(where, startTime, endTime); whereClause != "" {
+		query += " " + whereClause
 	}
 	row := s.db.QueryRow(query)
 	if err := row.Scan(&count); err != nil {
