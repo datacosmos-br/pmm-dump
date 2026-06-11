@@ -1,0 +1,33 @@
+internal/test/deployment/container.go
+  s_aa0bbd287021d9::t_1688d6782c6f32 110,158
+pkg/postgres/config.go
+  s_aa0bbd287021d9::t_1688d6782c6f32 1-21
+pkg/postgres/source.go
+  s_aa0bbd287021d9::t_1688d6782c6f32 1-107
+go.mod
+  s_ee7985171d1475::t_0973e5f62aeb61 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "5303adc9a9db3b62110e59858110af63fbbd4b33",
+  "prompts": {},
+  "sessions": {
+    "s_aa0bbd287021d9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "019eb862-755f-7f23-82e0-c16c29890f21",
+        "model": "unknown"
+      },
+      "human_author": "Marlon Costa <marlonsc@gmail.com>"
+    },
+    "s_ee7985171d1475": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "019eb868-f34f-7843-a040-e64b7e9e0118",
+        "model": "unknown"
+      },
+      "human_author": "Marlon Costa <marlonsc@gmail.com>"
+    }
+  }
+}
