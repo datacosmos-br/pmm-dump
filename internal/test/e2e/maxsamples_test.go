@@ -175,7 +175,7 @@ func TestMaxSamples(t *testing.T) {
 	tCtx, cancel := context.WithTimeout(ctx, getTimeout)
 	defer cancel()
 
-	pmmConfig, err := pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "", nil)
+	pmmConfig, err := pkgUtil.GetPMMConfig(pmm.PMMURL(), "", "", "", nil)
 	if err != nil {
 		t.Fatal("failed to get config for pmm", err)
 	}
