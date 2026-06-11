@@ -12,126 +12,124 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build security
-
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"pmm-dump/pkg/util"
 )
 
-func TestNoCredentialsInProcessList(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("cmdline check only works on Linux")
+func TestRedactFlagValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		flag  string
+		value string
+		want  string
+	}{
+		{
+			name:  "pmm token",
+			flag:  "pmm-token",
+			value: "token-secret",
+			want:  "***",
+		},
+		{
+			name:  "pmm cookie",
+			flag:  "pmm-cookie",
+			value: "cookie-secret",
+			want:  "***",
+		},
+		{
+			name:  "encryption pass",
+			flag:  "pass",
+			value: "dump-secret",
+			want:  "***",
+		},
+		{
+			name:  "url credentials",
+			flag:  "postgres-url",
+			value: "postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed?username=admin&password=secret",
+			want:  "postgres://REDACTED@pg.example.com:5432/pmm-managed?password=REDACTED&username=REDACTED",
+		},
+		{
+			name:  "plain flag",
+			flag:  "workers",
+			value: "4",
+			want:  "4",
+		},
 	}
 
-	// Set env vars that the binary should read, not pass as flags
-	t.Setenv("PMM_CLICKHOUSE_URL", "clickhouse://secret_user:secret_pass@ch.example.com:9000/pmm")
-	t.Setenv("PMM_VM_URL", "http://vm:8428")
-	t.Setenv("PMM_POSTGRES_URL", "postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed")
-
-	// Build the binary
-	binPath := filepath.Join(t.TempDir(), "pmm-dump")
-	build := exec.Command("go", "build", "-o", binPath, "pmm-dump/cmd/pmm-dump")
-	buildOut, err := build.CombinedOutput()
-	require.NoError(t, err, "build failed: %s", buildOut)
-
-	// Run it in background with just basic flags
-	cmd := exec.Command(binPath, "version")
-	cmd.Env = os.Environ()
-	require.NoError(t, cmd.Start())
-	defer func() { _ = cmd.Process.Kill() }()
-
-	// Give it time to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Read /proc/<pid>/cmdline
-	cmdlinePath := fmt.Sprintf("/proc/%d/cmdline", cmd.Process.Pid)
-	data, err := os.ReadFile(cmdlinePath)
-	require.NoError(t, err)
-	cmdline := strings.ReplaceAll(string(data), "\x00", " ")
-
-	// Assert no credentials leaked
-	assert.NotContains(t, cmdline, "secret_user")
-	assert.NotContains(t, cmdline, "secret_pass")
-	assert.NotContains(t, cmdline, "pg_user")
-	assert.NotContains(t, cmdline, "pg_pass")
-	assert.NotContains(t, cmdline, "clickhouse://")
-	assert.NotContains(t, cmdline, "postgres://")
-}
-
-func TestNoCredentialsInLogs(t *testing.T) {
-	// Set sensitive env vars
-	t.Setenv("PMM_CLICKHOUSE_URL", "clickhouse://log_user:log_pass@ch.example.com:9000/pmm")
-	t.Setenv("PMM_VM_URL", "http://vm:8428")
-	t.Setenv("PMM_POSTGRES_URL", "postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed")
-
-	// Build the binary
-	binPath := filepath.Join(t.TempDir(), "pmm-dump")
-	build := exec.Command("go", "build", "-o", binPath, "pmm-dump/cmd/pmm-dump")
-	buildOut, err := build.CombinedOutput()
-	require.NoError(t, err, "build failed: %s", buildOut)
-
-	// Run version with verbose to trigger logging
-	cmd := exec.Command(binPath, "version", "-v")
-	cmd.Env = os.Environ()
-	out, _ := cmd.CombinedOutput()
-	output := string(out)
-
-	// Assert no credentials in logs
-	sensitivePatterns := []string{
-		"log_user", "log_pass", "pg_user", "pg_pass",
-		"clickhouse://log_user", "postgres://pg_user",
-	}
-	for _, pattern := range sensitivePatterns {
-		assert.NotContains(t, output, pattern, "credential leak in logs: %s", pattern)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, redactFlagValue(tt.flag, tt.value))
+		})
 	}
 }
 
-func TestDumpFilePermissions(t *testing.T) {
-	tmpDir := t.TempDir()
-	dumpPath := filepath.Join(tmpDir, "test-dump.tar.gz")
+func TestValidateNoSecretCLIArgs(t *testing.T) {
+	rejected := [][]string{
+		{"--pmm-token", "token-secret", "export"},
+		{"--pmm-cookie=cookie-secret", "export"},
+		{"--pmm-pass", "pmm-secret", "export"},
+		{"--pass=dump-secret", "export"},
+		{"--pmm-url", "http://admin:secret@localhost:8080", "export"},
+		{"--click-house-url=clickhouse://ch_user:ch_pass@ch.example.com:9000/pmm"},
+		{"--victoria-metrics-url=http://vm.example.com?token=vm-secret"},
+		{"--postgres-url=postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed"},
+	}
 
-	// Create a dummy dump file
-	f, err := os.OpenFile(dumpPath, os.O_CREATE|os.O_WRONLY, 0o600)
-	require.NoError(t, err)
-	_, err = f.WriteString("dummy")
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
+	for _, args := range rejected {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			require.Error(t, validateNoSecretCLIArgs(args))
+		})
+	}
 
-	// Verify permissions
-	info, err := os.Stat(dumpPath)
-	require.NoError(t, err)
-	mode := info.Mode().Perm()
-	assert.Equal(t, os.FileMode(0o600), mode, "dump file must be owner-readable only")
+	accepted := [][]string{
+		nil,
+		{"--pmm-token=", "export"},
+		{"--pmm-url", "http://localhost:8080", "export"},
+		{"--click-house-url=clickhouse://ch.example.com:9000/pmm"},
+		{"--victoria-metrics-url", "http://vm.example.com/prometheus"},
+		{"--postgres-url", "postgres://pg.example.com:5432/pmm-managed"},
+	}
+
+	for _, args := range accepted {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			require.NoError(t, validateNoSecretCLIArgs(args))
+		})
+	}
 }
 
-func TestRedactURL_NoCredentialsInMeta(t *testing.T) {
-	urls := []string{
-		"http://admin:secret@localhost:8080/path",
-		"clickhouse://ch_user:ch_pass@ch.example.com:9000/pmm",
-		"postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed?sslmode=require",
-	}
-	passwordRegex := regexp.MustCompile(`(?i)(user|pass|password)[=:]\S+`)
+func TestRedactedArguments(t *testing.T) {
+	app := kingpin.New("pmm-dump-test", "")
+	app.Flag("pmm-token", "").String()
+	app.Flag("pmm-cookie", "").String()
+	app.Flag("pass", "").String()
+	app.Flag("postgres-url", "").String()
+	app.Command("export", "")
 
-	for _, raw := range urls {
-		redacted := util.RedactURL(raw)
-		assert.NotContains(t, redacted, "secret", "URL not redacted: %s", raw)
-		assert.NotContains(t, redacted, "ch_pass", "URL not redacted: %s", raw)
-		assert.NotContains(t, redacted, "pg_pass", "URL not redacted: %s", raw)
-		assert.False(t, passwordRegex.MatchString(redacted), "password pattern found in redacted URL: %s", redacted)
-	}
+	context, err := app.ParseContext([]string{
+		"--pmm-token", "token-secret",
+		"--pmm-cookie", "cookie-secret",
+		"--pass", "dump-secret",
+		"--postgres-url", "postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed?username=admin&password=secret",
+		"export",
+	})
+	require.NoError(t, err)
+
+	args := strings.Join(redactedArguments(context), " ")
+	assert.Contains(t, args, "--pmm-token=***")
+	assert.Contains(t, args, "--pmm-cookie=***")
+	assert.Contains(t, args, "--pass=***")
+	assert.Contains(t, args, "--postgres-url=")
+	assert.NotContains(t, args, "token-secret")
+	assert.NotContains(t, args, "cookie-secret")
+	assert.NotContains(t, args, "dump-secret")
+	assert.NotContains(t, args, "pg_user")
+	assert.NotContains(t, args, "pg_pass")
+	assert.NotContains(t, args, "admin")
+	assert.NotContains(t, args, "secret")
 }

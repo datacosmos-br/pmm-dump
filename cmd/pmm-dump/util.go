@@ -39,11 +39,24 @@ import (
 	"pmm-dump/pkg/clickhouse"
 	"pmm-dump/pkg/dump"
 	"pmm-dump/pkg/grafana/client"
+	"pmm-dump/pkg/postgres"
 	"pmm-dump/pkg/util"
 	"pmm-dump/pkg/victoriametrics"
 )
 
 const minPMMServerVersion = "2.12.0"
+
+const (
+	flagPMMURL             = "pmm-url"
+	flagPMMUser            = "pmm-user"
+	flagPMMPass            = "pmm-pass"
+	flagPMMToken           = "pmm-token"
+	flagPMMCookie          = "pmm-cookie"
+	flagPass               = "pass"
+	flagVictoriaMetricsURL = "victoria-metrics-url"
+	flagClickHouseURL      = "click-house-url"
+	flagPostgresURL        = "postgres-url"
+)
 
 func newClientHTTP(insecureSkipVerify bool) *fasthttp.Client {
 	return &fasthttp.Client{
@@ -334,23 +347,7 @@ func composeMeta(pmmURL string, c *client.Client, exportServices bool, cli *king
 	if err != nil {
 		return nil, err
 	}
-	var args []string
-	for _, element := range context.Elements {
-		switch cl := element.Clause.(type) {
-		case *kingpin.CmdClause:
-			args = append(args, cl.FullCommand())
-		case *kingpin.FlagClause:
-			model := cl.Model()
-			value := model.Value.String()
-			switch model.Name {
-			case "pmm-user", "pmm-pass":
-				value = "***"
-			case "pmm-url", "victoria-metrics-url", "click-house-url":
-				value = util.RedactURL(value)
-			}
-			args = append(args, fmt.Sprintf("--%s=%s", model.Name, value))
-		}
-	}
+	args := redactedArguments(context)
 
 	pmmServices := []dump.PMMServerService(nil)
 	if exportServices {
@@ -475,6 +472,156 @@ func prepareClickHouseSource(ctx context.Context, url, where string) (*clickhous
 	return clickhouseSource, nil
 }
 
+func preparePostgresSource(dumpPostgres bool, url string) (*postgres.Source, bool) {
+	if !dumpPostgres || url == "" {
+		return nil, false
+	}
+
+	c := postgres.Config{
+		ConnectionURL: url,
+		Databases:     []string{"grafana", "ssmDB", "percona"},
+	}
+
+	log.Debug().Msgf("Got PostgreSQL URL: %s", util.RedactURL(c.ConnectionURL))
+
+	return postgres.NewSource(c), true
+}
+
+func redactedArguments(context *kingpin.ParseContext) []string {
+	args := make([]string, 0, len(context.Elements))
+	for _, element := range context.Elements {
+		switch cl := element.Clause.(type) {
+		case *kingpin.CmdClause:
+			args = append(args, cl.FullCommand())
+		case *kingpin.FlagClause:
+			model := cl.Model()
+			args = append(args, fmt.Sprintf("--%s=%s", model.Name, redactFlagValue(model.Name, model.Value.String())))
+		}
+	}
+	return args
+}
+
+func redactFlagValue(name, value string) string {
+	switch name {
+	case flagPMMUser, flagPMMPass, flagPMMToken, flagPMMCookie, flagPass:
+		return "***"
+	case flagPMMURL, flagVictoriaMetricsURL, flagClickHouseURL, flagPostgresURL:
+		return util.RedactURL(value)
+	default:
+		return value
+	}
+}
+
+func validateNoSecretCLIArgs(args []string) error {
+	for i := range args {
+		name, value, hasInlineValue := splitLongFlag(args[i])
+		if name == "" {
+			continue
+		}
+
+		if isSecretFlag(name) {
+			if hasInlineValue {
+				if value != "" {
+					return fmt.Errorf("flag --%s exposes a secret in process arguments; use %s instead", name, secretFlagEnv(name))
+				}
+				continue
+			}
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				return fmt.Errorf("flag --%s exposes a secret in process arguments; use %s instead", name, secretFlagEnv(name))
+			}
+			continue
+		}
+
+		if !isURLFlag(name) {
+			continue
+		}
+
+		if !hasInlineValue {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				continue
+			}
+			value = args[i+1]
+		}
+		if urlHasCredentials(value) {
+			return fmt.Errorf("flag --%s contains credentials in process arguments; use %s instead", name, urlFlagEnv(name))
+		}
+	}
+	return nil
+}
+
+func splitLongFlag(arg string) (string, string, bool) {
+	if !strings.HasPrefix(arg, "--") {
+		return "", "", false
+	}
+	raw := strings.TrimPrefix(arg, "--")
+	name, value, hasInlineValue := strings.Cut(raw, "=")
+	return name, value, hasInlineValue
+}
+
+func isSecretFlag(name string) bool {
+	switch name {
+	case flagPMMPass, flagPMMToken, flagPMMCookie, flagPass:
+		return true
+	default:
+		return false
+	}
+}
+
+func isURLFlag(name string) bool {
+	switch name {
+	case flagPMMURL, flagVictoriaMetricsURL, flagClickHouseURL, flagPostgresURL:
+		return true
+	default:
+		return false
+	}
+}
+
+func secretFlagEnv(name string) string {
+	switch name {
+	case flagPMMPass:
+		return "PMM_PASS"
+	case flagPMMToken:
+		return "PMM_TOKEN"
+	case flagPMMCookie:
+		return "PMM_COOKIE"
+	case flagPass:
+		return "PMM_DUMP_PASS"
+	default:
+		return "the matching environment variable"
+	}
+}
+
+func urlFlagEnv(name string) string {
+	switch name {
+	case flagPMMURL:
+		return "PMM_URL without embedded credentials plus PMM_USER/PMM_PASS/PMM_TOKEN/PMM_COOKIE"
+	case flagVictoriaMetricsURL:
+		return "PMM_VM_URL without embedded credentials"
+	case flagClickHouseURL:
+		return "PMM_CLICKHOUSE_URL without embedded credentials"
+	case flagPostgresURL:
+		return "PMM_POSTGRES_URL without embedded credentials"
+	default:
+		return "the matching environment variable"
+	}
+}
+
+func urlHasCredentials(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.User != nil {
+		return true
+	}
+	for key := range u.Query() {
+		lowerKey := strings.ToLower(key)
+		if lowerKey == "user" || lowerKey == "username" || strings.Contains(lowerKey, "pass") || strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "secret") {
+			return true
+		}
+	}
+	return false
+}
 func parseURL(pmmURL, pmmHost, pmmPort, pmmUser, pmmPassword *string) {
 	parsedURL, err := url.Parse(*pmmURL)
 	if err != nil {
