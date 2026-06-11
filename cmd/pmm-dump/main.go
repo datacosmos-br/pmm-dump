@@ -134,6 +134,10 @@ func main() {
 	log.Logger = log.Output(logConsoleWriter)
 	log.Logger = log.Logger.Level(zerolog.InfoLevel)
 
+	if err := validateNoSecretCLIArgs(os.Args[1:]); err != nil {
+		log.Fatal().Msg(err.Error())
+	}
+
 	cmd, err := cli.DefaultEnvars().Parse(os.Args[1:])
 	if err != nil {
 		log.Fatal().Msgf("Error parsing parameters: %s", err.Error())

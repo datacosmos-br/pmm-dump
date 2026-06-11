@@ -33,7 +33,7 @@ func TestRedactURL(t *testing.T) {
 		{
 			name:     "with credentials",
 			input:    "http://user:password@localhost:8080/path",
-			expected: "http://REDACTED:REDACTED@localhost:8080/path",
+			expected: "http://REDACTED@localhost:8080/path",
 		},
 		{
 			name:     "without credentials",
@@ -43,12 +43,12 @@ func TestRedactURL(t *testing.T) {
 		{
 			name:     "invalid URL without credentials",
 			input:    "://invalid-url",
-			expected: "://invalid-url",
+			expected: "***",
 		},
 		{
 			name:     "postgres URL",
 			input:    "postgres://admin:secret@db.example.com:5432/pmm-managed?sslmode=require",
-			expected: "postgres://REDACTED:REDACTED@db.example.com:5432/pmm-managed?sslmode=require",
+			expected: "postgres://REDACTED@db.example.com:5432/pmm-managed?sslmode=require",
 		},
 	}
 
