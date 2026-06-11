@@ -15,7 +15,6 @@
 package util
 
 import (
-	"os"
 	"testing"
 
 	"github.com/hashicorp/go-version"
@@ -23,46 +22,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetClickHouseURLFromEnv(t *testing.T) {
-	t.Run("complete URL", func(t *testing.T) {
-		t.Setenv("PMM_CLICKHOUSE_URL", "clickhouse://user:pass@host:9000/db")
-		assert.Equal(t, "clickhouse://user:pass@host:9000/db", GetClickHouseURLFromEnv())
-	})
-
+func TestClickHouseURLFromEnvComponents(t *testing.T) {
 	t.Run("build from components", func(t *testing.T) {
-		t.Setenv("PMM_CLICKHOUSE_URL", "")
+		clearClickHouseEnv(t)
 		t.Setenv("PMM_CLICKHOUSE_ADDR", "ch.example.com:9000")
 		t.Setenv("PMM_CLICKHOUSE_USER", "chuser")
 		t.Setenv("PMM_CLICKHOUSE_PASSWORD", "chpass")
 		t.Setenv("PMM_CLICKHOUSE_DATABASE", "chdb")
-		assert.Equal(t, "clickhouse://chuser:chpass@ch.example.com:9000/chdb", GetClickHouseURLFromEnv())
+		assert.Equal(t, "clickhouse://chuser:chpass@ch.example.com:9000/chdb", clickHouseURLFromEnvComponents())
 	})
 
-	t.Run("default", func(t *testing.T) {
-		_ = os.Unsetenv("PMM_CLICKHOUSE_URL")
-		_ = os.Unsetenv("PMM_CLICKHOUSE_ADDR")
-		_ = os.Unsetenv("PMM_CLICKHOUSE_USER")
-		_ = os.Unsetenv("PMM_CLICKHOUSE_PASSWORD")
-		_ = os.Unsetenv("PMM_CLICKHOUSE_DATABASE")
-		assert.Equal(t, "clickhouse://default:clickhouse@127.0.0.1:9000/pmm", GetClickHouseURLFromEnv())
-	})
-}
-
-func TestGetVMURLFromEnv(t *testing.T) {
-	t.Run("from env", func(t *testing.T) {
-		t.Setenv("PMM_VM_URL", "http://vm:8428")
-		assert.Equal(t, "http://vm:8428", GetVMURLFromEnv())
+	t.Run("host and port components", func(t *testing.T) {
+		clearClickHouseEnv(t)
+		t.Setenv("PMM_CLICKHOUSE_HOST", "ch.example.com")
+		t.Setenv("PMM_CLICKHOUSE_PORT", "9000")
+		t.Setenv("PMM_CLICKHOUSE_USER", "chuser")
+		t.Setenv("PMM_CLICKHOUSE_PASSWORD", "chpass")
+		t.Setenv("PMM_CLICKHOUSE_DATABASE", "chdb")
+		assert.Equal(t, "clickhouse://chuser:chpass@ch.example.com:9000/chdb", clickHouseURLFromEnvComponents())
 	})
 
-	t.Run("default", func(t *testing.T) {
-		_ = os.Unsetenv("PMM_VM_URL")
-		assert.Equal(t, "http://127.0.0.1:9090/prometheus", GetVMURLFromEnv())
+	t.Run("empty when env is absent", func(t *testing.T) {
+		clearClickHouseEnv(t)
+		assert.Empty(t, clickHouseURLFromEnvComponents())
 	})
 }
 
 func TestGetPMMConfig(t *testing.T) {
 	t.Run("all explicit", func(t *testing.T) {
-		ver, _ := version.NewVersion("3.8.1")
+		ver, err := version.NewVersion("3.8.1")
+		require.NoError(t, err)
 		conf, err := GetPMMConfig("http://pmm:8080", "http://vm:8428", "clickhouse://ch:9000", ver)
 		require.NoError(t, err)
 		assert.Equal(t, "http://pmm:8080", conf.PMMURL)
@@ -70,22 +59,62 @@ func TestGetPMMConfig(t *testing.T) {
 		assert.Equal(t, "clickhouse://ch:9000", conf.ClickHouseURL)
 	})
 
-	t.Run("fallback to env", func(t *testing.T) {
-		t.Setenv("PMM_VM_URL", "http://vm-env:8428")
-		t.Setenv("PMM_CLICKHOUSE_URL", "clickhouse://ch-env:9000")
-		ver, _ := version.NewVersion("3.8.1")
-		conf, err := GetPMMConfig("http://pmm:8080", "", "", ver)
+	t.Run("values supplied by kingpin env binding", func(t *testing.T) {
+		ver, err := version.NewVersion("3.8.1")
+		require.NoError(t, err)
+		conf, err := GetPMMConfig("http://pmm:8080", "http://vm-env:8428", "clickhouse://ch-env:9000", ver)
 		require.NoError(t, err)
 		assert.Equal(t, "http://vm-env:8428", conf.VictoriaMetricsURL)
 		assert.Equal(t, "clickhouse://ch-env:9000", conf.ClickHouseURL)
 	})
+
+	t.Run("clickhouse component env fallback", func(t *testing.T) {
+		clearClickHouseEnv(t)
+		t.Setenv("PMM_CLICKHOUSE_ADDR", "ch-env.example.com:9000")
+		t.Setenv("PMM_CLICKHOUSE_USER", "chuser")
+		t.Setenv("PMM_CLICKHOUSE_PASSWORD", "chpass")
+		t.Setenv("PMM_CLICKHOUSE_DATABASE", "chdb")
+		ver, err := version.NewVersion("3.8.1")
+		require.NoError(t, err)
+		conf, err := GetPMMConfig("http://pmm:8080", "", "", ver)
+		require.NoError(t, err)
+		assert.Equal(t, "http://pmm:8080/prometheus", conf.VictoriaMetricsURL)
+		assert.Equal(t, "clickhouse://chuser:chpass@ch-env.example.com:9000/chdb", conf.ClickHouseURL)
+	})
+
+	t.Run("fallback to pmm url when env absent", func(t *testing.T) {
+		clearClickHouseEnv(t)
+		ver, err := version.NewVersion("3.8.1")
+		require.NoError(t, err)
+		conf, err := GetPMMConfig("http://pmm:8080", "", "", ver)
+		require.NoError(t, err)
+		assert.Equal(t, "http://pmm:8080/prometheus", conf.VictoriaMetricsURL)
+		assert.Equal(t, "clickhouse://default:clickhouse@pmm:9000/pmm", conf.ClickHouseURL)
+	})
+}
+
+func clearClickHouseEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"PMM_CLICKHOUSE_ADDR",
+		"PMM_CLICKHOUSE_HOST",
+		"PMM_CLICKHOUSE_PORT",
+		"PMM_CLICKHOUSE_USER",
+		"PMM_CLICKHOUSE_PASSWORD",
+		"PMM_CLICKHOUSE_DATABASE",
+	} {
+		t.Setenv(key, "")
+	}
 }
 
 func TestRedactURL(t *testing.T) {
 	t.Run("redact credentials", func(t *testing.T) {
-		redacted := RedactURL("clickhouse://user:pass@host:9000/db")
+		redacted := RedactURL("clickhouse://user:pass@host:9000/db?password=secret&token=abc&username=admin")
 		assert.Contains(t, redacted, "REDACTED")
-		assert.NotContains(t, redacted, "pass")
+		assert.NotContains(t, redacted, "user:pass")
+		assert.NotContains(t, redacted, "secret")
+		assert.NotContains(t, redacted, "abc")
+		assert.NotContains(t, redacted, "admin")
 	})
 
 	t.Run("no credentials", func(t *testing.T) {
