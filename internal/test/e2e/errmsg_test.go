@@ -106,13 +106,14 @@ func TestErrMsgCheckCompatibilityVersion(t *testing.T) {
 			))
 			defer server.Close()
 
+			// Embed credentials in the URL (allowed and redacted in logs) instead of
+			// the dedicated --pmm-pass flag, which validateNoSecretCLIArgs rejects.
+			pmmURL := strings.Replace(server.URL, "http://", "http://some-user:some-password@", 1)
 			_, stderr, err := b.Run(
 				"import",
 				"--no-encryption",
 				"-d", "some-dumppath",
-				"--pmm-url", server.URL,
-				"--pmm-user", "some-user",
-				"--pmm-pass", "some-password",
+				"--pmm-url", pmmURL,
 			)
 			if err != nil && err.Error() != "exit status 1" {
 				t.Fatal(err)
