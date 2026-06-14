@@ -1,0 +1,60 @@
+[
+  {
+    "id": "server-version",
+    "httpRequest": {
+      "method": "GET",
+      "path": "/v1/server/version"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "body": {
+        "version": "3.0.0",
+        "server": {
+          "version": "3.0.0",
+          "full_version": "3.0.0-2026.06.10",
+          "timestamp": "2026-06-10T12:00:00Z"
+        },
+        "distribution_method": "docker"
+      }
+    }
+  },
+  {
+    "id": "grafana-org-preferences",
+    "httpRequest": {
+      "method": "GET",
+      "path": "/graph/api/org/preferences"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "body": {
+        "timezone": "UTC"
+      }
+    }
+  },
+  {
+    "id": "inventory-services",
+    "httpRequest": {
+      "method": "GET",
+      "path": "/v1/inventory/services"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "body": {
+        "mysql": [],
+        "postgresql": [],
+        "mongodb": []
+      }
+    }
+  },
+  {
+    "id": "inventory-agents",
+    "httpRequest": {
+      "method": "GET",
+      "path": "/v1/inventory/agents"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "body": {}
+    }
+  }
+]

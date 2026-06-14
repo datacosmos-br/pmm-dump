@@ -1,4 +1,4 @@
-.PHONY: all build up down re pmm-status mongo-reg mongo-insert export-all export-vm export-ch import-all init-test run-tests clean init
+.PHONY: all build up down re pmm-status mongo-reg mongo-insert export-all export-vm export-ch import-all init-test run-tests clean init test-unit test-integration test-e2e test-security test-all test-infra-up test-infra-down
 
 export CGO_ENABLED=0
 
@@ -143,3 +143,23 @@ init-e2e-tests: init build
 
 run-tests: run-unit-tests run-e2e-tests run-e2e-tests-v2
 
+
+test-unit:              ## Run unit tests
+	go test -v -count=1 ./pkg/... ./cmd/...
+
+test-integration:       ## Run integration tests with docker-compose.test.yml
+	go test -v -count=1 -tags=integration ./...
+
+test-e2e:               ## Run end-to-end tests
+	go test -v -count=1 -tags=e2e ./...
+
+test-security:          ## Run security validation tests
+	go test -v -count=1 -tags=security ./...
+
+test-all: test-unit test-integration test-e2e test-security  ## Run all tests
+
+test-infra-up:          ## Start test infrastructure (CH, VM, PG, mock)
+	docker compose -f docker-compose.test.yml up -d --wait
+
+test-infra-down:        ## Stop test infrastructure
+	docker compose -f docker-compose.test.yml down --volumes

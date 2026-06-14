@@ -28,9 +28,10 @@ type PMMConfig struct {
 	PMMURL             string
 	ClickHouseURL      string
 	VictoriaMetricsURL string
+	PostgresURL        string
 }
 
-func GetPMMConfig(pmmLink, vmLink, chLink string, ver *version.Version) (PMMConfig, error) {
+func GetPMMConfig(pmmLink, vmLink, chLink, pgLink string, ver *version.Version) (PMMConfig, error) {
 	pmmURL, err := url.Parse(pmmLink)
 	if err != nil {
 		return PMMConfig{}, fmt.Errorf("failed to parse pmm-url: %w", err)
@@ -39,10 +40,14 @@ func GetPMMConfig(pmmLink, vmLink, chLink string, ver *version.Version) (PMMConf
 		PMMURL:             pmmLink,
 		ClickHouseURL:      chLink,
 		VictoriaMetricsURL: vmLink,
+		PostgresURL:        pgLink,
 	}
 
 	if conf.ClickHouseURL == "" {
 		conf.ClickHouseURL = clickHouseURLFromEnvComponents()
+	}
+	if conf.PostgresURL == "" {
+		conf.PostgresURL = postgresURLFromEnvComponents()
 	}
 
 	if conf.ClickHouseURL == "" {
@@ -114,6 +119,34 @@ func clickHouseURLFromEnvComponents() string {
 	}
 	if user != "" || pass != "" {
 		u.User = url.UserPassword(user, pass)
+	}
+	return u.String()
+}
+
+func postgresURLFromEnvComponents() string {
+	addr := os.Getenv("PMM_POSTGRES_ADDR")
+	if addr == "" {
+		return ""
+	}
+	user := os.Getenv("PMM_POSTGRES_USERNAME")
+	pass := os.Getenv("PMM_POSTGRES_PASSWORD")
+	db := os.Getenv("PMM_POSTGRES_DBNAME")
+	sslmode := os.Getenv("PMM_POSTGRES_SSLMODE")
+
+	u := url.URL{
+		Scheme: "postgres",
+		Host:   addr,
+		Path:   db,
+	}
+	if pass != "" {
+		u.User = url.UserPassword(user, pass)
+	} else if user != "" {
+		u.User = url.User(user)
+	}
+	if sslmode != "" {
+		q := u.Query()
+		q.Set("sslmode", sslmode)
+		u.RawQuery = q.Encode()
 	}
 	return u.String()
 }

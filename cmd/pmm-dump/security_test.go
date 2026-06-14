@@ -50,9 +50,9 @@ func TestRedactFlagValue(t *testing.T) {
 		},
 		{
 			name:  "url credentials",
-			flag:  "click-house-url",
-			value: "clickhouse://ch_user:ch_pass@ch.example.com:9000/pmm?username=admin&password=secret",
-			want:  "clickhouse://REDACTED@ch.example.com:9000/pmm?password=REDACTED&username=REDACTED",
+			flag:  "postgres-url",
+			value: "postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed?username=admin&password=secret",
+			want:  "postgres://REDACTED@pg.example.com:5432/pmm-managed?password=REDACTED&username=REDACTED",
 		},
 		{
 			name:  "plain flag",
@@ -78,6 +78,7 @@ func TestValidateNoSecretCLIArgs(t *testing.T) {
 		{"--pmm-url", "http://admin:secret@localhost:8080", "export"},
 		{"--click-house-url=clickhouse://ch_user:ch_pass@ch.example.com:9000/pmm"},
 		{"--victoria-metrics-url=http://vm.example.com?token=vm-secret"},
+		{"--postgres-url=postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed"},
 	}
 
 	for _, args := range rejected {
@@ -92,6 +93,7 @@ func TestValidateNoSecretCLIArgs(t *testing.T) {
 		{"--pmm-url", "http://localhost:8080", "export"},
 		{"--click-house-url=clickhouse://ch.example.com:9000/pmm"},
 		{"--victoria-metrics-url", "http://vm.example.com/prometheus"},
+		{"--postgres-url", "postgres://pg.example.com:5432/pmm-managed"},
 	}
 
 	for _, args := range accepted {
@@ -106,14 +108,14 @@ func TestRedactedArguments(t *testing.T) {
 	app.Flag("pmm-token", "").String()
 	app.Flag("pmm-cookie", "").String()
 	app.Flag("pass", "").String()
-	app.Flag("click-house-url", "").String()
+	app.Flag("postgres-url", "").String()
 	app.Command("export", "")
 
 	context, err := app.ParseContext([]string{
 		"--pmm-token", "token-secret",
 		"--pmm-cookie", "cookie-secret",
 		"--pass", "dump-secret",
-		"--click-house-url", "clickhouse://ch_user:ch_pass@ch.example.com:9000/pmm?username=admin&password=secret",
+		"--postgres-url", "postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed?username=admin&password=secret",
 		"export",
 	})
 	require.NoError(t, err)
@@ -122,12 +124,12 @@ func TestRedactedArguments(t *testing.T) {
 	assert.Contains(t, args, "--pmm-token=***")
 	assert.Contains(t, args, "--pmm-cookie=***")
 	assert.Contains(t, args, "--pass=***")
-	assert.Contains(t, args, "--click-house-url=")
+	assert.Contains(t, args, "--postgres-url=")
 	assert.NotContains(t, args, "token-secret")
 	assert.NotContains(t, args, "cookie-secret")
 	assert.NotContains(t, args, "dump-secret")
-	assert.NotContains(t, args, "ch_user")
-	assert.NotContains(t, args, "ch_pass")
+	assert.NotContains(t, args, "pg_user")
+	assert.NotContains(t, args, "pg_pass")
 	assert.NotContains(t, args, "admin")
 	assert.NotContains(t, args, "secret")
 }

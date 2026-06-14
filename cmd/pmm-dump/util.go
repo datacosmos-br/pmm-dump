@@ -39,6 +39,7 @@ import (
 	"pmm-dump/pkg/clickhouse"
 	"pmm-dump/pkg/dump"
 	"pmm-dump/pkg/grafana/client"
+	"pmm-dump/pkg/postgres"
 	"pmm-dump/pkg/util"
 	"pmm-dump/pkg/victoriametrics"
 )
@@ -54,6 +55,7 @@ const (
 	flagPass               = "pass"
 	flagVictoriaMetricsURL = "victoria-metrics-url"
 	flagClickHouseURL      = "click-house-url"
+	flagPostgresURL        = "postgres-url"
 )
 
 func newClientHTTP(insecureSkipVerify bool) *fasthttp.Client {
@@ -470,6 +472,21 @@ func prepareClickHouseSource(ctx context.Context, url, where string) (*clickhous
 	return clickhouseSource, nil
 }
 
+func preparePostgresSource(dumpPostgres bool, url string) (*postgres.Source, bool) {
+	if !dumpPostgres || url == "" {
+		return nil, false
+	}
+
+	c := postgres.Config{
+		ConnectionURL: url,
+		Databases:     []string{"grafana", "ssmDB", "percona"},
+	}
+
+	log.Debug().Msgf("Got PostgreSQL URL: %s", util.RedactURL(c.ConnectionURL))
+
+	return postgres.NewSource(c), true
+}
+
 func redactedArguments(context *kingpin.ParseContext) []string {
 	args := make([]string, 0, len(context.Elements))
 	for _, element := range context.Elements {
@@ -488,7 +505,7 @@ func redactFlagValue(name, value string) string {
 	switch name {
 	case flagPMMUser, flagPMMPass, flagPMMToken, flagPMMCookie, flagPass:
 		return "***"
-	case flagPMMURL, flagVictoriaMetricsURL, flagClickHouseURL:
+	case flagPMMURL, flagVictoriaMetricsURL, flagClickHouseURL, flagPostgresURL:
 		return util.RedactURL(value)
 	default:
 		return value
@@ -552,7 +569,7 @@ func isSecretFlag(name string) bool {
 
 func isURLFlag(name string) bool {
 	switch name {
-	case flagPMMURL, flagVictoriaMetricsURL, flagClickHouseURL:
+	case flagPMMURL, flagVictoriaMetricsURL, flagClickHouseURL, flagPostgresURL:
 		return true
 	default:
 		return false
@@ -582,6 +599,8 @@ func urlFlagEnv(name string) string {
 		return "PMM_VM_URL without embedded credentials"
 	case flagClickHouseURL:
 		return "PMM_CLICKHOUSE_URL without embedded credentials"
+	case flagPostgresURL:
+		return "PMM_POSTGRES_URL without embedded credentials"
 	default:
 		return "the matching environment variable"
 	}
