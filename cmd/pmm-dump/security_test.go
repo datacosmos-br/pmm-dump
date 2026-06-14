@@ -70,15 +70,13 @@ func TestRedactFlagValue(t *testing.T) {
 }
 
 func TestValidateNoSecretCLIArgs(t *testing.T) {
+	// Only dedicated secret flags are rejected: they have env-var equivalents and
+	// must never appear in process arguments.
 	rejected := [][]string{
 		{"--pmm-token", "token-secret", "export"},
 		{"--pmm-cookie=cookie-secret", "export"},
 		{"--pmm-pass", "pmm-secret", "export"},
 		{"--pass=dump-secret", "export"},
-		{"--pmm-url", "http://admin:secret@localhost:8080", "export"},
-		{"--click-house-url=clickhouse://ch_user:ch_pass@ch.example.com:9000/pmm"},
-		{"--victoria-metrics-url=http://vm.example.com?token=vm-secret"},
-		{"--postgres-url=postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed"},
 	}
 
 	for _, args := range rejected {
@@ -87,13 +85,20 @@ func TestValidateNoSecretCLIArgs(t *testing.T) {
 		})
 	}
 
+	// Credentials embedded in connection-URL flags are allowed: that is the
+	// standard, documented pmm-dump invocation (and the form used by the Makefile).
+	// They are redacted in logs by redactFlagValue, covered in TestRedactFlagValue.
 	accepted := [][]string{
 		nil,
 		{"--pmm-token=", "export"},
 		{"--pmm-url", "http://localhost:8080", "export"},
+		{"--pmm-url", "http://admin:secret@localhost:8080", "export"},
 		{"--click-house-url=clickhouse://ch.example.com:9000/pmm"},
+		{"--click-house-url=clickhouse://ch_user:ch_pass@ch.example.com:9000/pmm"},
+		{"--victoria-metrics-url=http://vm.example.com?token=vm-secret"},
 		{"--victoria-metrics-url", "http://vm.example.com/prometheus"},
 		{"--postgres-url", "postgres://pg.example.com:5432/pmm-managed"},
+		{"--postgres-url=postgres://pg_user:pg_pass@pg.example.com:5432/pmm-managed"},
 	}
 
 	for _, args := range accepted {

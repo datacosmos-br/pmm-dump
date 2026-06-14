@@ -512,38 +512,27 @@ func redactFlagValue(name, value string) string {
 	}
 }
 
+// validateNoSecretCLIArgs rejects dedicated secret flags (--pmm-pass, --pmm-token,
+// --pmm-cookie, --pass) on the command line, since those have environment-variable
+// equivalents and must never appear in process arguments. Credentials embedded in
+// connection-URL flags (--pmm-url, --click-house-url, ...) are intentionally allowed:
+// that is the standard, documented pmm-dump invocation (and the form used by this
+// repo's Makefile targets); such URLs are redacted in logs via redactFlagValue.
 func validateNoSecretCLIArgs(args []string) error {
 	for i := range args {
 		name, value, hasInlineValue := splitLongFlag(args[i])
-		if name == "" {
+		if name == "" || !isSecretFlag(name) {
 			continue
 		}
 
-		if isSecretFlag(name) {
-			if hasInlineValue {
-				if value != "" {
-					return fmt.Errorf("flag --%s exposes a secret in process arguments; use %s instead", name, secretFlagEnv(name))
-				}
-				continue
-			}
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+		if hasInlineValue {
+			if value != "" {
 				return fmt.Errorf("flag --%s exposes a secret in process arguments; use %s instead", name, secretFlagEnv(name))
 			}
 			continue
 		}
-
-		if !isURLFlag(name) {
-			continue
-		}
-
-		if !hasInlineValue {
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-				continue
-			}
-			value = args[i+1]
-		}
-		if urlHasCredentials(value) {
-			return fmt.Errorf("flag --%s contains credentials in process arguments; use %s instead", name, urlFlagEnv(name))
+		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			return fmt.Errorf("flag --%s exposes a secret in process arguments; use %s instead", name, secretFlagEnv(name))
 		}
 	}
 	return nil
@@ -567,15 +556,6 @@ func isSecretFlag(name string) bool {
 	}
 }
 
-func isURLFlag(name string) bool {
-	switch name {
-	case flagPMMURL, flagVictoriaMetricsURL, flagClickHouseURL, flagPostgresURL:
-		return true
-	default:
-		return false
-	}
-}
-
 func secretFlagEnv(name string) string {
 	switch name {
 	case flagPMMPass:
@@ -589,38 +569,6 @@ func secretFlagEnv(name string) string {
 	default:
 		return "the matching environment variable"
 	}
-}
-
-func urlFlagEnv(name string) string {
-	switch name {
-	case flagPMMURL:
-		return "PMM_URL without embedded credentials plus PMM_USER/PMM_PASS/PMM_TOKEN/PMM_COOKIE"
-	case flagVictoriaMetricsURL:
-		return "PMM_VM_URL without embedded credentials"
-	case flagClickHouseURL:
-		return "PMM_CLICKHOUSE_URL without embedded credentials"
-	case flagPostgresURL:
-		return "PMM_POSTGRES_URL without embedded credentials"
-	default:
-		return "the matching environment variable"
-	}
-}
-
-func urlHasCredentials(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	if u.User != nil {
-		return true
-	}
-	for key := range u.Query() {
-		lowerKey := strings.ToLower(key)
-		if lowerKey == "user" || lowerKey == "username" || strings.Contains(lowerKey, "pass") || strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "secret") {
-			return true
-		}
-	}
-	return false
 }
 
 func parseURL(pmmURL, pmmHost, pmmPort, pmmUser, pmmPassword *string) {
