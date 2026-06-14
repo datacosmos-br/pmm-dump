@@ -118,22 +118,29 @@ func findDashboardUID(c *client.Client, pmmURL, name string) (string, error) {
 	if err = json.Unmarshal(data, &resp); err != nil {
 		return "", err
 	}
-	if len(resp) == 0 {
-		return "", errors.New("dashboard not found")
-	} else if len(resp) == 1 {
-		return resp[0].UID, nil
-	}
 
-	uid := ""
+	// /api/search also returns folders, and a folder may share a dashboard's
+	// title (e.g. "PMM Health" exists both as a folder and as the dash-db
+	// uid=pmm-health inside it). A folder uid 404s on /api/dashboards/uid, so we
+	// must resolve only against "dash-db" entries and prefer an exact title match.
+	var exactUID, soleUID string
+	dashCount := 0
 	for _, v := range resp {
+		if v.Type != "dash-db" {
+			continue
+		}
+		dashCount++
+		soleUID = v.UID
 		if v.Title == name {
-			uid = v.UID
-			break
+			exactUID = v.UID
 		}
 	}
-	if uid == "" {
+	switch {
+	case exactUID != "":
+		return exactUID, nil
+	case dashCount == 1:
+		return soleUID, nil
+	default:
 		return "", errors.New("dashboard not found")
 	}
-
-	return uid, nil
 }
