@@ -174,6 +174,7 @@ func getAllDashboardsNames(t *testing.T, pmm *deployment.PMM) []string {
 
 	type dashboardResp struct {
 		Title string `json:"title"`
+		Type  string `json:"type"`
 	}
 	var s []dashboardResp
 	if err := json.Unmarshal(data, &s); err != nil {
@@ -181,6 +182,12 @@ func getAllDashboardsNames(t *testing.T, pmm *deployment.PMM) []string {
 	}
 	names := make([]string, 0, len(s))
 	for _, v := range s {
+		// Only "dash-db" entries are real dashboards. PMM 3.8.0's grafana also
+		// returns folders ("dash-folder") from /api/search; resolving a folder via
+		// --dashboard 404s on /api/dashboards/uid/<folder-uid>. Skip non-dashboards.
+		if v.Type != "dash-db" {
+			continue
+		}
 		names = append(names, v.Title)
 	}
 	return names
