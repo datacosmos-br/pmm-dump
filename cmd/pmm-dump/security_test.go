@@ -70,13 +70,12 @@ func TestRedactFlagValue(t *testing.T) {
 }
 
 func TestValidateNoSecretCLIArgs(t *testing.T) {
-	// Only dedicated secret flags are rejected: they have env-var equivalents and
-	// must never appear in process arguments.
+	// Only server-credential flags are rejected: they have env-var equivalents
+	// (PMM_PASS/PMM_TOKEN/PMM_COOKIE) and must never appear in process arguments.
 	rejected := [][]string{
 		{"--pmm-token", "token-secret", "export"},
 		{"--pmm-cookie=cookie-secret", "export"},
 		{"--pmm-pass", "pmm-secret", "export"},
-		{"--pass=dump-secret", "export"},
 	}
 
 	for _, args := range rejected {
@@ -91,6 +90,8 @@ func TestValidateNoSecretCLIArgs(t *testing.T) {
 	accepted := [][]string{
 		nil,
 		{"--pmm-token=", "export"},
+		{"--pass=dump-secret", "export"},
+		{"--pass", "dump-secret", "export"},
 		{"--pmm-url", "http://localhost:8080", "export"},
 		{"--pmm-url", "http://admin:secret@localhost:8080", "export"},
 		{"--click-house-url=clickhouse://ch.example.com:9000/pmm"},

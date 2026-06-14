@@ -512,12 +512,14 @@ func redactFlagValue(name, value string) string {
 	}
 }
 
-// validateNoSecretCLIArgs rejects dedicated secret flags (--pmm-pass, --pmm-token,
-// --pmm-cookie, --pass) on the command line, since those have environment-variable
-// equivalents and must never appear in process arguments. Credentials embedded in
-// connection-URL flags (--pmm-url, --click-house-url, ...) are intentionally allowed:
-// that is the standard, documented pmm-dump invocation (and the form used by this
-// repo's Makefile targets); such URLs are redacted in logs via redactFlagValue.
+// validateNoSecretCLIArgs rejects server-credential flags (--pmm-pass, --pmm-token,
+// --pmm-cookie) on the command line: those have environment-variable equivalents
+// (PMM_PASS/PMM_TOKEN/PMM_COOKIE) and have no legitimate reason to appear in process
+// arguments. The dump-encryption password (--pass) and credentials embedded in
+// connection-URL flags (--pmm-url, --click-house-url, ...) are intentionally allowed —
+// they are documented, first-class pmm-dump usages (and the form used by this repo's
+// Makefile targets); --pass also has the --pass-filepath alternative, and all of these
+// are redacted in logs via redactFlagValue.
 func validateNoSecretCLIArgs(args []string) error {
 	for i := range args {
 		name, value, hasInlineValue := splitLongFlag(args[i])
@@ -549,7 +551,7 @@ func splitLongFlag(arg string) (string, string, bool) {
 
 func isSecretFlag(name string) bool {
 	switch name {
-	case flagPMMPass, flagPMMToken, flagPMMCookie, flagPass:
+	case flagPMMPass, flagPMMToken, flagPMMCookie:
 		return true
 	default:
 		return false
