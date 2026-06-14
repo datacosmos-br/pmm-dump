@@ -1,50 +1,136 @@
-name: Release CI
+---
+name: Release
 
-on: workflow_dispatch
+# GitOps release pipeline: pushing a semver tag (e.g. v0.8.1-dc2) builds the
+# binaries and the multi-arch OCI image, publishes the image to GHCR, and
+# creates a GitHub Release with checksummed assets. The tag is the single
+# source of truth for the released version.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/datacosmos-br/pmm-dump
 
 jobs:
-  build:
-
+  binaries:
+    name: Build binaries & GitHub Release
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@main
-    
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: go.mod
-      
-    - name: Build
-      run: make build
-      env:
-        CGO_ENABLED: 0
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
 
-    - name: Test
-      run: ./pmm-dump version
-      
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
-        
-    - name: Upload Release Asset
-      id: upload-release-asset 
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-        asset_path: pmm-dump
-        asset_name: pmm-dump
-        asset_content_type: application/x-executable
+      - name: Derive version metadata
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
-    - name: Refresh percona/get endpoint
-      run: curl https://percona.com/get/make.php
+      - name: Build cross-platform binaries
+        env:
+          CGO_ENABLED: 0
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ldflags="-s -w -X 'main.GitBranch=${BRANCH}' -X 'main.GitCommit=${COMMIT}' -X 'main.GitVersion=${VERSION}'"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            out="dist/pmm-dump-${os}-${arch}"
+            echo "building ${out}"
+            GOOS="${os}" GOARCH="${arch}" go build -trimpath -ldflags "${ldflags}" -o "${out}" pmm-dump/cmd/pmm-dump
+          done
+          # Canonical name kept for backward compatibility (percona/get, docs).
+          cp dist/pmm-dump-linux-amd64 dist/pmm-dump
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum pmm-dump* > SHA256SUMS
+
+      - name: Smoke test built binary
+        run: ./dist/pmm-dump-linux-amd64 version
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/pmm-dump
+            dist/pmm-dump-linux-amd64
+            dist/pmm-dump-linux-arm64
+            dist/pmm-dump-darwin-amd64
+            dist/pmm-dump-darwin-arm64
+            dist/SHA256SUMS
+
+  image:
+    name: Build & push OCI image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version metadata
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          sbom: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ steps.meta.outputs.commit }}
+            BRANCH=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
