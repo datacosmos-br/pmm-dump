@@ -129,9 +129,22 @@ func (s Source) ReadChunks(m dump.ChunkMeta) ([]*dump.Chunk, error) {
 		log.Debug().Msg(fmt.Sprintln("Got samples from reading: ", samples))
 	}
 
+	content := body
+	if !bytes.HasPrefix(content, gzipMagic) {
+		// VictoriaMetrics honours Accept-Encoding: gzip only above an internal
+		// size threshold, so tiny boundary responses come back uncompressed.
+		// The dump format requires every VM chunk to be gzip — both the import
+		// path (sendChunk sets Content-Encoding: gzip) and the split path
+		// (decompressChunk) assume it — so normalise here to keep the invariant.
+		content, err = gzipEncode(content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to gzip-normalize VM chunk: %w", err)
+		}
+	}
+
 	chunk := &dump.Chunk{
 		ChunkMeta: m,
-		Content:   body,
+		Content:   content,
 		Filename:  m.String() + ".bin",
 	}
 
@@ -184,6 +197,24 @@ func ReadChunk(c *client.Client, startTime, endTime *time.Time, nativeData bool,
 	body := copyBytesArr(resp.Body())
 
 	return body, resp.StatusCode(), nil
+}
+
+// gzipMagic is the two-byte gzip header used to detect whether a VM response
+// is already compressed.
+var gzipMagic = []byte{0x1f, 0x8b}
+
+// gzipEncode compresses raw bytes so an uncompressed VM response can be stored
+// as a gzip chunk, matching the dump format invariant.
+func gzipEncode(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	if _, err := w.Write(data); err != nil {
+		return nil, fmt.Errorf("failed to write gzip data: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 func gzipDecode(data []byte) string {

@@ -28,6 +28,7 @@ import (
 
 	"github.com/valyala/fasthttp"
 
+	"pmm-dump/pkg/dump"
 	"pmm-dump/pkg/grafana/client"
 )
 
@@ -121,6 +122,69 @@ func TestWriteChunk(t *testing.T) {
 				t.Fatal("should be error")
 			}
 		})
+	}
+}
+
+func TestReadChunksNormalizesUncompressedVMResponse(t *testing.T) {
+	// Root-cause regression: VictoriaMetrics honours Accept-Encoding: gzip only
+	// above an internal size threshold, so tiny boundary chunks come back as
+	// raw JSON. The dump format requires every VM chunk to be gzip — the import
+	// (sendChunk) and split (decompressChunk) paths assume it — so ReadChunks
+	// must normalise a raw response to gzip before storing it. Without this,
+	// import fails with "cannot decode vmimport data: gzip: invalid header".
+	const rawLine = `{"metric":{"__name__":"node_test","instance":"x"},"values":[0],"timestamps":[1781461557000]}` + "\n"
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(rw http.ResponseWriter, _ *http.Request) {
+			// Respond uncompressed regardless of Accept-Encoding, mimicking VM
+			// skipping gzip for a small payload.
+			_, _ = io.WriteString(rw, rawLine)
+		},
+	))
+	defer server.Close()
+
+	httpC := &fasthttp.Client{
+		MaxConnsPerHost:           2,
+		MaxIdleConnDuration:       time.Minute,
+		MaxIdemponentCallAttempts: 5,
+		ReadTimeout:               time.Minute,
+		WriteTimeout:              time.Minute,
+		MaxConnWaitTimeout:        time.Second * 30,
+		TLSConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec
+		},
+	}
+	grafanaC, err := client.NewClient(httpC, client.AuthParams{
+		User:     "admin",
+		Password: "admin",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewSource(grafanaC, &Config{ConnectionURL: server.URL})
+
+	start := time.Unix(1781461557, 0)
+	end := time.Unix(1781461587, 0)
+	chunks, err := s.ReadChunks(dump.ChunkMeta{Source: dump.VictoriaMetrics, Start: &start, End: &end})
+	if err != nil {
+		t.Fatalf("ReadChunks: %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+
+	// Invariant: stored chunk content must be valid gzip.
+	if _, err := gzip.NewReader(bytes.NewReader(chunks[0].Content)); err != nil {
+		t.Fatalf("chunk content is not gzip (dump invariant violated): %v", err)
+	}
+
+	// And it must round-trip back to the original metric.
+	metrics, err := decompressChunk(chunks[0].Content)
+	if err != nil {
+		t.Fatalf("decompressChunk: %v", err)
+	}
+	if len(metrics) != 1 || metrics[0].Metric["__name__"] != "node_test" {
+		t.Fatalf("unexpected metrics round-trip: %+v", metrics)
 	}
 }
 
