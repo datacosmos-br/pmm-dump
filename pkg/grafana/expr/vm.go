@@ -133,7 +133,12 @@ func (p *VMExprParser) GetSelectors(dashboard types.DashboardPanel) ([]string, e
 	}
 
 	for _, target := range dashboard.Targets {
-		if target.Datasource.Name != VMDatasourceName || target.Expr == "" {
+		// Hidden (disabled) targets are not rendered, so their selectors are
+		// irrelevant to the export -- and broken panels ship hidden targets with
+		// unparseable queries (e.g. PMM 3.8.0's "PMM Health" has a hidden
+		// ClickHouseProfileEvents_ReadBackoff target referencing the undefined
+		// $peaks var). Skipping them avoids failing the whole dashboard export.
+		if target.Datasource.Name != VMDatasourceName || target.Expr == "" || target.Hide {
 			continue
 		}
 

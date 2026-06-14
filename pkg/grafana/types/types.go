@@ -24,6 +24,7 @@ type DashboardPanel struct {
 	Targets []struct {
 		Expr       string        `json:"expr"`
 		Datasource DataSourceRef `json:"datasource"`
+		Hide       bool          `json:"hide"`
 	} `json:"targets"`
 	Templating struct {
 		List []VariableModel `json:"list"`
