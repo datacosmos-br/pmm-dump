@@ -74,11 +74,9 @@ services:
       - "18428:8428"
     command:
       - "-retentionPeriod=30d"
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8428/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+    # No healthcheck: the VictoriaMetrics single-node image is built FROM
+    # scratch (no shell/wget), so an exec healthcheck can never run. Nothing
+    # depends_on it with service_healthy, so `--wait` gates on "started".
 
   postgres:
     image: postgres:16
@@ -105,8 +103,6 @@ services:
       MOCKSERVER_INITIALIZATION_JSON_PATH: /config/mockserver.json
     volumes:
       - ./setup/mockserver:/config:ro
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:1080/mockserver/status"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+    # No healthcheck: the mockserver image lacks an in-container HTTP client and
+    # its status endpoint requires PUT (not a wget GET). Nothing depends_on it
+    # with service_healthy, so `--wait` gates on "started".
